@@ -1,7 +1,141 @@
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
+/// Project configuration from oxiflow.yaml
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectConfig {
+    pub project: ProjectMetadata,
+    pub oxis: HashMap<String, OxiSource>,
+    pub settings: ProjectSettings,
+    pub environment: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectMetadata {
+    pub name: String,
+    pub version: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OxiSource {
+    pub version: String,
+    pub source: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectSettings {
+    pub output_dir: String,
+    pub pipeline_dir: String,
+    pub oxis_dir: String,
+}
+
+impl ProjectConfig {
+    /// Load project configuration from oxiflow.yaml
+    pub fn load() -> Result<Self> {
+        Self::load_from_path("oxiflow.yaml")
+    }
+
+    /// Load project configuration from a specific path
+    pub fn load_from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let content = fs::read_to_string(&path).with_context(|| {
+            format!("Failed to read config file at {}", path.as_ref().display())
+        })?;
+
+        let config: ProjectConfig = serde_yaml::from_str(&content).with_context(|| {
+            format!("Failed to parse config file at {}", path.as_ref().display())
+        })?;
+
+        Ok(config)
+    }
+
+    /// Find a pipeline by name in the configured pipeline directory
+    pub fn find_pipeline(&self, name: &str) -> Result<PathBuf> {
+        let pipeline_dir = Path::new(&self.settings.pipeline_dir);
+
+        // Try different extensions and exact matches
+        let candidates = vec![
+            format!("{}.yaml", name),
+            format!("{}.yml", name),
+            format!("{name}/pipeline.yaml"),
+            format!("{name}/pipeline.yml"),
+        ];
+
+        for candidate in candidates {
+            let path = pipeline_dir.join(&candidate);
+            if path.exists() && path.is_file() {
+                println!("📋 Found pipeline: {}", path.display());
+                return Ok(path);
+            }
+        }
+
+        // If not found, list available pipelines to help the user
+        self.list_available_pipelines()?;
+        anyhow::bail!(
+            "Pipeline '{}' not found in {}",
+            name,
+            pipeline_dir.display()
+        )
+    }
+
+    /// List all available pipelines in the configured directory
+    pub fn list_available_pipelines(&self) -> Result<Vec<String>> {
+        let pipeline_dir = Path::new(&self.settings.pipeline_dir);
+
+        if !pipeline_dir.exists() {
+            println!(
+                "⚠️  Pipeline directory '{}' does not exist",
+                pipeline_dir.display()
+            );
+            return Ok(vec![]);
+        }
+
+        let mut pipelines = Vec::new();
+
+        for entry in fs::read_dir(pipeline_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_file() {
+                if let Some(extension) = path.extension() {
+                    if extension == "yaml" || extension == "yml" {
+                        if let Some(stem) = path.file_stem() {
+                            if let Some(name) = stem.to_str() {
+                                pipelines.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            } else if path.is_dir() {
+                // Check for pipeline.yaml in subdirectories
+                let pipeline_file = path.join("pipeline.yaml");
+                let pipeline_file_yml = path.join("pipeline.yml");
+
+                if pipeline_file.exists() || pipeline_file_yml.exists() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        pipelines.push(name.to_string());
+                    }
+                }
+            }
+        }
+
+        if pipelines.is_empty() {
+            println!("📂 No pipelines found in {}", pipeline_dir.display());
+        } else {
+            println!("📂 Available pipelines in {}:", pipeline_dir.display());
+            for pipeline in &pipelines {
+                println!("  • {}", pipeline);
+            }
+        }
+
+        Ok(pipelines)
+    }
+}
 
 /// Initialize a new Oxide Flow project
 pub fn init_project(name: Option<String>, directory: Option<String>) -> Result<()> {

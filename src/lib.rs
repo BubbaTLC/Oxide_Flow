@@ -5,6 +5,7 @@ pub mod error;
 pub mod oxis;
 pub mod pipeline;
 pub mod project;
+pub mod schema;
 pub mod types;
 
 use async_trait::async_trait;

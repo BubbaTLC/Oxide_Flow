@@ -1,0 +1,17 @@
+pipeline:
+  - name: read_file
+    id: reader
+    config:
+      path: "test_input.json"
+    retry_attempts: 1
+
+  - name: parse_json
+    id: parser
+    retry_attempts: 0
+
+  - name: write_stdout
+    id: writer
+
+metadata:
+  name: "File Test Pipeline"
+  description: "Simple file-based test"

@@ -1,0 +1,20 @@
+pipeline:
+  # Step 1: Start with some test data
+  - name: read_stdin
+    id: reader
+    config:
+      prompt: "Enter JSON:"
+
+  # Step 2: Parse JSON (with retry)
+  - name: parse_json
+    id: parser
+    retry_attempts: 1
+
+  # Step 3: Output the result
+  - name: write_stdout
+    id: writer
+
+metadata:
+  name: "Simple Enhanced Test"
+  description: "Simple test for enhanced execution"
+  version: "1.0.0"

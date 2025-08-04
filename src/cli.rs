@@ -25,8 +25,8 @@ pub enum Commands {
     },
     /// Run a pipeline from a YAML file
     Run {
-        /// Path to pipeline YAML file
-        #[arg(short, long, default_value = "pipelines/pipeline.yaml")]
+        /// Pipeline name to run (finds in configured pipeline directory)
+        #[arg(default_value = "pipeline")]
         pipeline: String,
 
         /// Path to configuration file

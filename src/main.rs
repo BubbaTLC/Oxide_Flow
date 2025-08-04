@@ -1,19 +1,11 @@
 use clap::Parser;
-use oxide_flow::oxis::csv::oxi::{FormatCsv, ParseCsv};
-use oxide_flow::oxis::file::oxi::{ReadFile, WriteFile};
-use oxide_flow::oxis::flatten::oxi::Flatten;
-use oxide_flow::oxis::json::oxi::{FormatJson, ParseJson};
-use oxide_flow::oxis::read_stdin::ReadStdIn;
-use oxide_flow::oxis::write_stdout::WriteStdOut;
 use oxide_flow::{
     cli::{Cli, Commands},
     config_resolver::ConfigResolver,
     pipeline::Pipeline,
-    project,
+    project::{self, ProjectConfig},
     types::OxiData,
-    Oxi,
 };
-use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() {
@@ -36,20 +28,36 @@ async fn main() {
         Commands::Run {
             pipeline,
             config: _,
-        } => {
-            println!("Running pipeline from: {pipeline}");
-            match run_pipeline_from_yaml(&pipeline).await {
-                Ok(_) => println!("✅ Pipeline execution completed successfully!"),
-                Err(e) => {
-                    eprintln!("❌ Pipeline execution failed: {e}");
-                    std::process::exit(1);
-                }
+        } => match run_pipeline_by_name(&pipeline).await {
+            Ok(_) => println!("✅ Pipeline execution completed successfully!"),
+            Err(e) => {
+                eprintln!("❌ Pipeline execution failed: {e}");
+                std::process::exit(1);
             }
-        }
+        },
     }
 }
 
-/// Run a pipeline from a YAML file
+/// Run a pipeline by name using project configuration for discovery
+async fn run_pipeline_by_name(pipeline_name: &str) -> anyhow::Result<()> {
+    // Load project configuration
+    let project_config = ProjectConfig::load()
+        .map_err(|e| anyhow::anyhow!("Failed to load project configuration: {}", e))?;
+
+    // Find the pipeline file
+    let pipeline_path = project_config.find_pipeline(pipeline_name)?;
+
+    println!(
+        "🔍 Running pipeline '{}' from: {}",
+        pipeline_name,
+        pipeline_path.display()
+    );
+
+    // Run the pipeline
+    run_pipeline_from_yaml(pipeline_path.to_str().unwrap()).await
+}
+
+/// Run a pipeline from a YAML file with enhanced error handling
 async fn run_pipeline_from_yaml(pipeline_path: &str) -> anyhow::Result<()> {
     // Load pipeline
     let pipeline = Pipeline::load_from_file(pipeline_path)?;
@@ -61,88 +69,41 @@ async fn run_pipeline_from_yaml(pipeline_path: &str) -> anyhow::Result<()> {
     println!("Steps: {}", pipeline.step_count());
 
     // Create configuration resolver for dynamic references
-    let mut resolver = ConfigResolver::default();
-    let mut step_outputs: HashMap<String, OxiData> = HashMap::new();
-    let mut current_data = OxiData::Empty;
+    let resolver = ConfigResolver::default();
 
-    // Execute each step in the pipeline
-    for (step_index, step) in pipeline.pipeline.iter().enumerate() {
-        println!("Step {}: Executing oxi '{}'", step_index + 1, step.name);
+    // Use enhanced execution with error handling
+    let result = pipeline
+        .execute_with_retries(OxiData::Empty, &resolver)
+        .await;
 
-        // Convert step config to OxiConfig with resolution
-        let oxi_config = step.to_oxi_config(&resolver)?;
-
-        // Execute the appropriate Oxi
-        let step_result = match step.name.as_str() {
-            "read_file" => {
-                let oxi = ReadFile;
-                oxi.process(current_data, &oxi_config).await?
-            }
-            "write_file" => {
-                let oxi = WriteFile;
-                oxi.process(current_data, &oxi_config).await?
-            }
-            "read_stdin" => {
-                let oxi = ReadStdIn;
-                oxi.process(current_data, &oxi_config).await?
-            }
-            "write_stdout" => {
-                let oxi = WriteStdOut;
-                oxi.process(current_data, &oxi_config).await?
-            }
-            "parse_json" => {
-                let oxi = ParseJson;
-                oxi.process(current_data, &oxi_config).await?
-            }
-            "format_json" => {
-                let oxi = FormatJson;
-                oxi.process(current_data, &oxi_config).await?
-            }
-            "parse_csv" => {
-                let oxi = ParseCsv;
-                oxi.process(current_data, &oxi_config).await?
-            }
-            "format_csv" => {
-                let oxi = FormatCsv;
-                oxi.process(current_data, &oxi_config).await?
-            }
-            "flatten" => {
-                let oxi = Flatten;
-                oxi.process(current_data, &oxi_config).await?
-            }
-            _ => {
-                return Err(anyhow::anyhow!("Unknown oxi type: {}", step.name));
-            }
-        };
-
-        // Store step output in resolver for potential future reference
-        let step_id = step.get_id();
-        resolver.add_step_output(step_id.to_string(), step_result.clone());
-        step_outputs.insert(step_id.to_string(), step_result.clone());
-
-        // Update current data for next step
-        current_data = step_result;
-
-        match &current_data {
-            OxiData::Text(text) => {
-                let preview = if text.len() > 200 {
-                    format!("{}... ({} characters)", &text[..200], text.len())
-                } else {
-                    text.clone()
-                };
-                println!("  Result: Text data - {preview}");
-            }
-            OxiData::Json(_) => {
-                println!("  Result: JSON data");
-            }
-            OxiData::Binary(data) => {
-                println!("  Result: Binary data ({} bytes)", data.len());
-            }
-            OxiData::Empty => {
-                println!("  Result: Empty data");
+    if result.success {
+        if let Some(final_data) = result.final_data {
+            // Display final result
+            match &final_data {
+                OxiData::Text(text) => {
+                    let preview = if text.len() > 200 {
+                        format!("{}... ({} characters)", &text[..200], text.len())
+                    } else {
+                        text.clone()
+                    };
+                    println!("Final Result: Text data - {preview}");
+                }
+                OxiData::Json(_) => {
+                    println!("Final Result: JSON data");
+                }
+                OxiData::Binary(data) => {
+                    println!("Final Result: Binary data ({} bytes)", data.len());
+                }
+                OxiData::Empty => {
+                    println!("Final Result: Empty data");
+                }
             }
         }
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "Pipeline execution failed with {} failed steps",
+            result.steps_failed
+        ))
     }
-
-    Ok(())
 }
