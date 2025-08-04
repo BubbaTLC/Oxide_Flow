@@ -12,13 +12,38 @@ I'll analyze the current state of the Oxide Flow project and help you understand
 
 2. **Project Structure**: Clean modular architecture following the planned design
 
+3. **✅ COMPLETE: `oxiflow init` Command**:
+   - Project scaffolding with proper directory structure
+   - Default pipeline generation (JSON→CSV)
+   - Interactive and non-interactive modes
+
+4. **✅ COMPLETE: YAML Pipeline Execution**:
+   - Complete pipeline parser for YAML files
+   - Pipeline execution engine with proper error handling
+   - Data flow between pipeline steps
+
+5. **✅ COMPLETE: Environment Variable Substitution**:
+   - Support for `${ENV_VAR}` syntax
+   - Support for default values: `${ENV_VAR:-default}`
+   - Recursive resolution in nested configurations
+
+6. **✅ COMPLETE: Pipeline Step Referencing**:
+   - Support for `${step_id.field.path}` syntax
+   - Step output tracking and resolution
+   - JSON field extraction with dot notation
+
+7. **✅ COMPLETE: File I/O Oxis**:
+   - ReadFile and WriteFile Oxis with proper error handling
+   - Enhanced ReadFile with metadata output
+   - Automatic directory creation
+
 ### ❌ What's Missing/Incomplete
-1. **No `oxiflow init` command** - Critical for user onboarding
-2. **No YAML pipeline execution** - Core functionality missing
-3. **No environment variable substitution** (`${ENV_VAR}`)
-4. **No pipeline step referencing** (`${reader.metadata.path}`)
-5. **No Oxi registry system** for validation
-6. **Incomplete CLI** - missing pipeline execution commands
+1. **Oxi schema validation** - Validate pipeline configurations against Oxi schemas
+2. **Advanced nested configuration support** - More complex nested reference resolution
+3. **Oxi registry system** - Registry for discovering and validating available Oxis
+4. **Pipeline composition** - Support for importing/including other pipelines
+5. **Error recovery** - Graceful handling of step failures with retry/fallback options
+6. **Performance optimization** - Parallel step execution where possible
 
 ## Immediate Next Steps (Priority Order)
 
@@ -53,12 +78,42 @@ project_name/
     └── pipeline.yaml     # Default JSON->CSV pipeline
 ```
 
-### 2. Complete YAML Configuration System
+## Phase 2 Complete! ✅
+
+**Successfully Implemented:**
+
+### 1. ✅ Environment Variable Substitution (`${ENV_VAR}`)
+- Support for simple variables: `${VAR_NAME}`
+- Support for default values: `${VAR_NAME:-default_value}`
+- Recursive resolution in nested YAML configurations
+- Environment variable caching for performance
+
+### 2. ✅ Pipeline Step Referencing (`${step_id.field.path}`)
+- Reference step outputs using dot notation
+- JSON field extraction from previous step results
+- Automatic step output tracking and resolution
+- Support for nested field access
+
+### 3. ✅ Enhanced Configuration Resolution
+- Complete `ConfigResolver` module for dynamic references
+- Integration with pipeline execution engine
+- Comprehensive test coverage
+- Error handling for missing variables/fields
+
+### 4. ✅ Improved File I/O Oxis
+- Enhanced ReadFile Oxi with metadata output
+- Updated ParseJson to handle structured inputs
+- Backward compatibility maintained
+
+**Demo Examples:**
+- Environment variables: `CSV_DELIMITER="|" oxiflow run`
+- Step references: File named based on input size `size_360_output.csv`
+- Default values work when env vars not set
+
+## Next Steps (Priority Order)
+
+### 1. Complete Schema Validation System
 **Missing Features:**
-- Environment variable substitution (`${ENV_VAR}`)
-- Pipeline step referencing (`${reader.metadata.path}`)
-- Validation against Oxi schemas
-- Nested configuration support
 
 ### 3. Implement Pipeline Execution Engine
 Create a pipeline executor that:

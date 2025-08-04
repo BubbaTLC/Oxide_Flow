@@ -25,13 +25,31 @@ impl Oxi for ParseJson {
     }
 
     async fn process(&self, input: OxiData, _config: &OxiConfig) -> anyhow::Result<OxiData> {
-        // Get text from input
-        let text = input.as_text()?;
-
-        // Parse JSON
-        let json_value: serde_json::Value = serde_json::from_str(text)?;
-
-        Ok(OxiData::Json(json_value))
+        match input {
+            OxiData::Text(text) => {
+                // Parse JSON from text
+                let json_value: serde_json::Value = serde_json::from_str(&text)?;
+                Ok(OxiData::Json(json_value))
+            }
+            OxiData::Json(json) => {
+                // If it's a structured object with content field, extract just the content
+                if let Some(content) = json.get("content") {
+                    if let Some(content_str) = content.as_str() {
+                        let json_value: serde_json::Value = serde_json::from_str(content_str)?;
+                        Ok(OxiData::Json(json_value))
+                    } else {
+                        // Content is already JSON
+                        Ok(OxiData::Json(content.clone()))
+                    }
+                } else {
+                    // No content field, return as-is
+                    Ok(OxiData::Json(json))
+                }
+            }
+            _ => {
+                anyhow::bail!("ParseJson requires text or JSON input")
+            }
+        }
     }
 }
 

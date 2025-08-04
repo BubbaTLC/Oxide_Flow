@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod config;
+pub mod config_resolver;
 pub mod error;
 pub mod oxis;
 pub mod pipeline;

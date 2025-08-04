@@ -7,6 +7,7 @@ use oxide_flow::oxis::read_stdin::ReadStdIn;
 use oxide_flow::oxis::write_stdout::WriteStdOut;
 use oxide_flow::{
     cli::{Cli, Commands},
+    config_resolver::ConfigResolver,
     pipeline::Pipeline,
     project,
     types::OxiData,
@@ -59,7 +60,8 @@ async fn run_pipeline_from_yaml(pipeline_path: &str) -> anyhow::Result<()> {
     }
     println!("Steps: {}", pipeline.step_count());
 
-    // Track step outputs for potential referencing
+    // Create configuration resolver for dynamic references
+    let mut resolver = ConfigResolver::default();
     let mut step_outputs: HashMap<String, OxiData> = HashMap::new();
     let mut current_data = OxiData::Empty;
 
@@ -67,8 +69,8 @@ async fn run_pipeline_from_yaml(pipeline_path: &str) -> anyhow::Result<()> {
     for (step_index, step) in pipeline.pipeline.iter().enumerate() {
         println!("Step {}: Executing oxi '{}'", step_index + 1, step.name);
 
-        // Convert step config to OxiConfig
-        let oxi_config = step.to_oxi_config();
+        // Convert step config to OxiConfig with resolution
+        let oxi_config = step.to_oxi_config(&resolver)?;
 
         // Execute the appropriate Oxi
         let step_result = match step.name.as_str() {
@@ -113,8 +115,9 @@ async fn run_pipeline_from_yaml(pipeline_path: &str) -> anyhow::Result<()> {
             }
         };
 
-        // Store step output for potential future reference
+        // Store step output in resolver for potential future reference
         let step_id = step.get_id();
+        resolver.add_step_output(step_id.to_string(), step_result.clone());
         step_outputs.insert(step_id.to_string(), step_result.clone());
 
         // Update current data for next step

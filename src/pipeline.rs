@@ -1,3 +1,4 @@
+use crate::config_resolver::ConfigResolver;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -83,8 +84,23 @@ impl PipelineStep {
         self.id.as_ref().unwrap_or(&self.name)
     }
 
-    /// Convert config HashMap to OxiConfig
-    pub fn to_oxi_config(&self) -> crate::types::OxiConfig {
+    /// Convert config HashMap to OxiConfig with configuration resolution
+    pub fn to_oxi_config(
+        &self,
+        resolver: &ConfigResolver,
+    ) -> anyhow::Result<crate::types::OxiConfig> {
+        let mut oxi_config = crate::types::OxiConfig::default();
+
+        for (key, value) in &self.config {
+            let resolved_value = resolver.resolve_value(value)?;
+            oxi_config.values.insert(key.clone(), resolved_value);
+        }
+
+        Ok(oxi_config)
+    }
+
+    /// Convert config HashMap to OxiConfig without resolution (for backward compatibility)
+    pub fn to_oxi_config_simple(&self) -> crate::types::OxiConfig {
         let mut oxi_config = crate::types::OxiConfig::default();
         for (key, value) in &self.config {
             oxi_config.values.insert(key.clone(), value.clone());
@@ -92,7 +108,6 @@ impl PipelineStep {
         oxi_config
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

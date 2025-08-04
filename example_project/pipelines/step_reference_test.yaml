@@ -1,0 +1,28 @@
+# Pipeline with Step References in Configuration
+# This demonstrates step referencing in config values
+
+pipeline:
+  - name: read_file
+    id: source_reader
+    config:
+      path: "input.json"
+
+  - name: parse_json
+    id: parser
+
+  - name: format_csv
+    id: formatter
+    config:
+      headers: true
+      delimiter: ","
+
+  - name: write_file
+    id: writer
+    config:
+      path: "output/size_${source_reader.metadata.size}_output.csv"
+
+metadata:
+  name: "Step Reference Test Pipeline"
+  description: "Tests step referencing capabilities"
+  version: "2.0.0"
+  author: "Oxide Flow"

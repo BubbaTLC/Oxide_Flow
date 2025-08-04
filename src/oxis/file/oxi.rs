@@ -43,7 +43,17 @@ impl Oxi for ReadFile {
         let content = fs::read_to_string(&path)
             .map_err(|e| anyhow::anyhow!("Failed to read file '{}': {}", path, e))?;
 
-        Ok(OxiData::Text(content))
+        // Create JSON output with content and metadata
+        let result = serde_json::json!({
+            "content": content,
+            "metadata": {
+                "path": path,
+                "size": content.len(),
+                "type": "text"
+            }
+        });
+
+        Ok(OxiData::Json(result))
     }
 }
 
