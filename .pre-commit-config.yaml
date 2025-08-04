@@ -1,0 +1,66 @@
+# Pre-commit configuration for Oxide Flow
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+repos:
+  # Built-in hooks for common issues
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        description: Remove trailing whitespace
+      - id: end-of-file-fixer
+        description: Ensure files end with a newline
+      - id: check-yaml
+        description: Check YAML files for syntax errors
+        args: ['--multi', '--unsafe']
+      - id: check-toml
+        description: Check TOML files for syntax errors
+      - id: check-json
+        description: Check JSON files for syntax errors
+      - id: check-added-large-files
+        description: Prevent large files from being committed
+        args: ['--maxkb=500']
+      - id: check-case-conflict
+        description: Check for files with case conflicts
+      - id: check-merge-conflict
+        description: Check for merge conflict markers
+      - id: mixed-line-ending
+        description: Check for mixed line endings
+        args: ['--fix=lf']
+
+  # Rust-specific hooks
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: fmt
+        description: Format Rust code with rustfmt
+        name: Rust fmt
+      - id: cargo-check
+        description: Check Rust code with cargo check
+        name: Rust cargo check
+      - id: clippy
+        description: Lint Rust code with clippy
+        name: Rust clippy
+        args: ['--all-targets', '--all-features', '--', '-W', 'clippy::all']
+
+  # Additional security and dependency checks
+  - repo: local
+    hooks:
+      - id: cargo-audit
+        name: Rust security audit
+        description: Check for security vulnerabilities in dependencies
+        entry: cargo audit
+        language: system
+        files: 'Cargo\.(toml|lock)$'
+        pass_filenames: false
+
+# Global configuration
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+# Fail fast - stop on first failure
+fail_fast: false
+
+# Minimum pre-commit version required
+minimum_pre_commit_version: '3.0.0'
