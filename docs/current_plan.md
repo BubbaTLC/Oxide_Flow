@@ -108,7 +108,7 @@ Create a pipeline executor that:
    project:
      name: "my_project"
      version: "1.0.0"
-   
+
    oxis:
      core:
        version: "1.0.0"
@@ -116,7 +116,7 @@ Create a pipeline executor that:
      custom_transforms:
        version: "0.1.0"
        source: "git://github.com/user/custom-oxis"
-   
+
    settings:
      output_dir: "./output"
      pipeline_dir: "./pipelines"

@@ -6,16 +6,16 @@ pipeline:
     id: reader
     config:
       path: "input.json"
-    
+
   - name: parse_json
     id: parser
-    
+
   - name: format_csv
     id: formatter
     config:
       headers: true
       delimiter: ","
-    
+
   - name: write_file
     id: writer
     config:

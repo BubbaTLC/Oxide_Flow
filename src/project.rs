@@ -1,7 +1,7 @@
+use anyhow::{Context, Result};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use anyhow::{Context, Result};
 
 /// Initialize a new Oxide Flow project
 pub fn init_project(name: Option<String>, directory: Option<String>) -> Result<()> {
@@ -29,10 +29,12 @@ pub fn init_project(name: Option<String>, directory: Option<String>) -> Result<(
 
     // Create project structure
     create_project_structure(&target_dir, &project_name)?;
-    
-    println!("✅ Initialized Oxide Flow project '{}' in {}", 
-             project_name, 
-             target_dir.display());
+
+    println!(
+        "✅ Initialized Oxide Flow project '{}' in {}",
+        project_name,
+        target_dir.display()
+    );
     println!("📁 Created directories: output/, oxis/, pipelines/");
     println!("📄 Created files: oxiflow.yaml, pipelines/pipeline.yaml");
     println!("\nNext steps:");
@@ -44,8 +46,12 @@ pub fn init_project(name: Option<String>, directory: Option<String>) -> Result<(
 
 fn create_project_structure(target_dir: &Path, project_name: &str) -> Result<()> {
     // Create main project directory
-    fs::create_dir_all(target_dir)
-        .with_context(|| format!("Failed to create project directory: {}", target_dir.display()))?;
+    fs::create_dir_all(target_dir).with_context(|| {
+        format!(
+            "Failed to create project directory: {}",
+            target_dir.display()
+        )
+    })?;
 
     // Create subdirectories
     let subdirs = ["output", "oxis", "pipelines"];
@@ -58,28 +64,41 @@ fn create_project_structure(target_dir: &Path, project_name: &str) -> Result<()>
     // Create oxiflow.yaml
     let oxiflow_yaml = create_oxiflow_yaml(project_name);
     let oxiflow_path = target_dir.join("oxiflow.yaml");
-    fs::write(&oxiflow_path, oxiflow_yaml)
-        .with_context(|| format!("Failed to create oxiflow.yaml at {}", oxiflow_path.display()))?;
+    fs::write(&oxiflow_path, oxiflow_yaml).with_context(|| {
+        format!(
+            "Failed to create oxiflow.yaml at {}",
+            oxiflow_path.display()
+        )
+    })?;
 
     // Create default pipeline.yaml
     let pipeline_yaml = create_default_pipeline_yaml();
     let pipeline_path = target_dir.join("pipelines").join("pipeline.yaml");
-    fs::write(&pipeline_path, pipeline_yaml)
-        .with_context(|| format!("Failed to create pipeline.yaml at {}", pipeline_path.display()))?;
+    fs::write(&pipeline_path, pipeline_yaml).with_context(|| {
+        format!(
+            "Failed to create pipeline.yaml at {}",
+            pipeline_path.display()
+        )
+    })?;
 
     // Create sample input file
     let sample_json = create_sample_input_json();
     let sample_path = target_dir.join("input.json");
-    fs::write(&sample_path, sample_json)
-        .with_context(|| format!("Failed to create sample input.json at {}", sample_path.display()))?;
+    fs::write(&sample_path, sample_json).with_context(|| {
+        format!(
+            "Failed to create sample input.json at {}",
+            sample_path.display()
+        )
+    })?;
 
     Ok(())
 }
 
 fn create_oxiflow_yaml(project_name: &str) -> String {
-    format!(r#"# Oxide Flow Project Configuration
+    format!(
+        r#"# Oxide Flow Project Configuration
 project:
-  name: "{}"
+  name: "{project_name}"
   version: "1.0.0"
   description: "Data transformation pipeline project"
 
@@ -95,12 +114,13 @@ settings:
   output_dir: "./output"
   pipeline_dir: "./pipelines"
   oxis_dir: "./oxis"
-  
+
 # Default environment variables (can be overridden)
 environment:
   LOG_LEVEL: "info"
   OUTPUT_FORMAT: "pretty"
-"#, project_name)
+"#
+    )
 }
 
 fn create_default_pipeline_yaml() -> String {
@@ -112,16 +132,16 @@ pipeline:
     id: reader
     config:
       path: "input.json"
-    
+
   - name: parse_json
     id: parser
-    
+
   - name: format_csv
     id: formatter
     config:
       headers: true
       delimiter: ","
-    
+
   - name: write_file
     id: writer
     config:
@@ -133,7 +153,8 @@ metadata:
   description: "Converts JSON data to CSV format"
   version: "1.0.0"
   author: "Oxide Flow"
-"#.to_string()
+"#
+    .to_string()
 }
 
 fn create_sample_input_json() -> String {
@@ -147,7 +168,7 @@ fn create_sample_input_json() -> String {
   },
   {
     "id": 2,
-    "name": "Jane Smith", 
+    "name": "Jane Smith",
     "email": "jane@example.com",
     "age": 25,
     "city": "Los Angeles"
@@ -155,9 +176,10 @@ fn create_sample_input_json() -> String {
   {
     "id": 3,
     "name": "Bob Johnson",
-    "email": "bob@example.com", 
+    "email": "bob@example.com",
     "age": 35,
     "city": "Chicago"
   }
-]"#.to_string()
+]"#
+    .to_string()
 }

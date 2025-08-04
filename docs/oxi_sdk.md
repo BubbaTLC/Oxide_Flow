@@ -37,7 +37,7 @@ impl Oxi for YourOxi {
     fn name(&self) -> &str {
         "your_oxi"
     }
-    
+
     fn config_schema(&self) -> serde_yaml::Value {
         serde_yaml::from_str(r#"
             type: object
@@ -52,12 +52,12 @@ impl Oxi for YourOxi {
                 default: false
         "#).unwrap()
     }
-    
+
     async fn process(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
         // Get configuration options
         let option1 = config.get_string_or("option1", "default value");
         let option2 = config.get_bool_or("option2", false);
-        
+
         // Process based on input type
         match input {
             OxiData::Text(text) => {
@@ -91,15 +91,15 @@ impl Oxi for YourOxi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_your_oxi() {
         let oxi = YourOxi;
         let input = OxiData::Text("test input".to_string());
         let config = OxiConfig::default();
-        
+
         let result = oxi.process(input, &config).await.unwrap();
-        
+
         if let OxiData::Text(text) = result {
             assert!(text.contains("Processed: test input"));
         } else {

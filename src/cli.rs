@@ -18,7 +18,7 @@ pub enum Commands {
         /// Project name (optional, will prompt if not provided)
         #[arg(short, long)]
         name: Option<String>,
-        
+
         /// Target directory (defaults to current directory)
         #[arg(short, long)]
         directory: Option<String>,
@@ -28,7 +28,7 @@ pub enum Commands {
         /// Path to pipeline YAML file
         #[arg(short, long, default_value = "pipelines/pipeline.yaml")]
         pipeline: String,
-        
+
         /// Path to configuration file
         #[arg(short, long)]
         config: Option<String>,

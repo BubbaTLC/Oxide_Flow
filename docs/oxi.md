@@ -13,17 +13,17 @@ The Oxi trait defines the interface that all Oxis must implement:
 pub trait Oxi {
     /// Get the name of this Oxi
     fn name(&self) -> &str;
-    
+
     /// Get the configuration schema for this Oxi
     fn config_schema(&self) -> serde_yaml::Value;
-    
+
     /// Process data and produce output
-    async fn process(&self, 
-                     input: types::OxiData, 
+    async fn process(&self,
+                     input: types::OxiData,
                      config: &types::OxiConfig) -> anyhow::Result<types::OxiData>;
-                     
+
     /// Run this Oxi with the given input and configuration
-    async fn run(&self, 
+    async fn run(&self,
                  input: Option<types::OxiData>,
                  config: Option<types::OxiConfig>) -> anyhow::Result<types::OxiData>;
 }
@@ -65,7 +65,7 @@ impl Oxi for MyOxi {
     fn name(&self) -> &str {
         "my_oxi"
     }
-    
+
     fn config_schema(&self) -> serde_yaml::Value {
         serde_yaml::from_str(r#"
             type: object
@@ -76,14 +76,14 @@ impl Oxi for MyOxi {
                 default: "default value"
         "#).unwrap()
     }
-    
+
     async fn process(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
         // Process the input and return the output
         let text = input.as_text()?;
         let option = config.get_string_or("option", "default value");
-        
+
         let output = format!("{} - {}", text, option);
-        
+
         Ok(OxiData::Text(output))
     }
 }

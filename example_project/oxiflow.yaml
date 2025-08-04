@@ -16,7 +16,7 @@ settings:
   output_dir: "./output"
   pipeline_dir: "./pipelines"
   oxis_dir: "./oxis"
-  
+
 # Default environment variables (can be overridden)
 environment:
   LOG_LEVEL: "info"
