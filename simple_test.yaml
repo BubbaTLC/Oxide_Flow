@@ -1,0 +1,15 @@
+version: "1.0"
+
+pipelines:
+  default:
+    name: "Simple JSON Processing Pipeline"
+    description: "Process JSON input directly from stdin"
+    oxis:
+      - oxi: "read_stdin"
+        alias: "reader"
+      - oxi: "parse_json"
+        alias: "parser"
+      - oxi: "format_csv"
+        alias: "formatter"
+      - oxi: "write_stdout"
+        alias: "writer"
