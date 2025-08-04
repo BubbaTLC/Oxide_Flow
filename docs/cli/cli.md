@@ -1,6 +1,6 @@
 # Oxide Flow CLI Reference
 
-This guide covers the complete command-line interface for Oxide Flow, including all commands, options, and usage patterns.
+This guide provides a comprehensive overview of the Oxide Flow command-line interface. For detailed information about specific commands, see the individual command references.
 
 ## Table of Contents
 
@@ -55,210 +55,101 @@ oxide_flow -v init new_project
 
 ## Commands
 
-### `init` - Initialize New Project
+Oxide Flow provides three main commands for different aspects of pipeline management:
+
+### [`init`](init.md) - Initialize New Project
 
 Creates a new Oxide Flow project with default structure and configuration.
 
-**Syntax:**
 ```bash
 oxide_flow init [OPTIONS] [PROJECT_NAME]
 ```
 
-**Arguments:**
-- `[PROJECT_NAME]` - Name of the project (optional, will prompt if not provided)
+**Key features:**
+- Interactive project creation
+- Default pipeline templates
+- Project structure generation
+- Configuration file setup
 
-**Options:**
-- `--name` / `-n` `<NAME>` - Project name (alternative to positional argument)
-- `--directory` / `-d` `<PATH>` - Target directory (default: current directory)
-
-**Examples:**
+**Quick examples:**
 ```bash
-# Interactive project creation
+# Interactive creation
 oxide_flow init
 
-# Create project with specific name
-oxide_flow init my_data_project
-
-# Create in specific directory
-oxide_flow init --directory ~/projects --name analytics_pipeline
-
-# Using short flags
-oxide_flow init -d ~/projects -n analytics_pipeline
+# Create specific project
+oxide_flow init my_data_project --directory ~/projects
 ```
 
-**Generated Structure:**
-```
-my_project/
-├── oxiflow.yaml              # Project configuration
-├── pipelines/               # Pipeline definitions
-│   └── pipeline.yaml        # Default pipeline
-└── README.md                # Project documentation
-```
+[**→ Full `init` documentation**](init.md)
 
-**Generated Files:**
+### [`pipeline`](pipeline.md) - Pipeline Management
 
-**`oxiflow.yaml`** - Project configuration:
-```yaml
-# Oxide Flow Project Configuration
-project:
-  name: "my_project"
-  version: "1.0.0"
-  description: "Data transformation pipeline project"
+Comprehensive pipeline management including discovery, creation, testing, and analysis.
 
-oxis:
-  core:
-    version: "1.0.0"
-    source: "builtin"
-    description: "Core Oxis for file I/O and basic transformations"
-
-settings:
-  output_dir: "./output"
-  pipeline_dir: "./pipelines"
-  oxis_dir: "./oxis"
-
-environment:
-  LOG_LEVEL: "info"
-  OUTPUT_FORMAT: "pretty"
+```bash
+oxide_flow pipeline <SUBCOMMAND> [OPTIONS]
 ```
 
-**`pipelines/pipeline.yaml`** - Default pipeline:
-```yaml
-pipeline:
-  - name: read_file
-    id: reader
-    config:
-      path: "input.json"
-  - name: parse_json
-    id: parser
-  - name: format_csv
-    id: formatter
-    config:
-      headers: true
-      delimiter: ","
-  - name: write_file
-    id: writer
-    config:
-      path: "output.csv"
+**Subcommands:**
+- `list` - Discover and list available pipelines
+- `add` - Create new pipelines from templates
+- `test` - Validate pipeline configuration and structure
+- `info` - Show detailed pipeline information
 
-metadata:
-  name: "JSON to CSV Converter"
-  description: "Converts JSON data to CSV format"
+**Key features:**
+- Pipeline template system (6 built-in templates)
+- Comprehensive validation and testing
+- Step-by-step pipeline analysis
+- Filtering and search capabilities
+
+**Quick examples:**
+```bash
+# List all pipelines with step details
+oxide_flow pipeline list --verbose
+
+# Create ETL pipeline from template
+oxide_flow pipeline add customer_etl --template etl
+
+# Validate pipeline before running
+oxide_flow pipeline test customer_etl --verbose
 ```
 
----
+[**→ Full `pipeline` documentation**](pipeline.md)
 
-### `run` - Execute Pipeline
+### [`run`](run.md) - Execute Pipeline
 
-Discovers and executes a pipeline by name using the project configuration.
+Discovers and executes pipelines with comprehensive error handling and reporting.
 
-**Syntax:**
 ```bash
 oxide_flow run [OPTIONS] [PIPELINE_NAME]
 ```
 
-**Arguments:**
-- `[PIPELINE_NAME]` - Name of the pipeline to run (default: "pipeline")
+**Key features:**
+- Automatic pipeline discovery
+- Detailed execution reporting
+- Error recovery and retry logic
+- Environment variable support
 
-**Options:**
-- `--config` / `-c` `<PATH>` - Path to configuration file (optional)
-- `--verbose` / `-v` - Enable detailed output (global option)
-
-**Pipeline Discovery:**
-
-The `run` command discovers pipelines in the following order:
-1. `{name}.yaml` in pipeline directory
-2. `{name}.yml` in pipeline directory
-3. `{name}/pipeline.yaml` subdirectory
-4. `{name}/pipeline.yml` subdirectory
-
-**Examples:**
+**Quick examples:**
 ```bash
 # Run default pipeline
 oxide_flow run
 
-# Run specific pipeline by name
-oxide_flow run data_processor
+# Run specific pipeline with verbose output
+oxide_flow run --verbose data_processor
 
-# Run with verbose output
-oxide_flow run --verbose etl_pipeline
-
-# Run with custom config
-oxide_flow run --config dev.yaml my_pipeline
+# Run with environment variables
+INPUT_FILE=data.csv oxide_flow run processor
 ```
 
-**Pipeline Discovery Output:**
-```bash
-$ oxide_flow run data_processor
-📋 Found pipeline: ./pipelines/data_processor.yaml
-🔍 Running pipeline 'data_processor' from: ./pipelines/data_processor.yaml
-Running pipeline: Data Processing Pipeline
-Description: Processes customer data for analysis
-Steps: 5
-🚀 Starting pipeline execution: Data Processing Pipeline
-```
-
-**Error Handling - Pipeline Not Found:**
-```bash
-$ oxide_flow run nonexistent
-📂 Available pipelines in ./pipelines:
-  • data_processor
-  • etl_pipeline
-  • json_converter
-  • validation_pipeline
-❌ Pipeline execution failed: Pipeline 'nonexistent' not found in ./pipelines
-```
-
-**Execution Output:**
-
-The run command provides detailed execution feedback:
-
-```bash
-🚀 Starting pipeline execution: Data Processing Pipeline
-
-📋 Step 1 of 4: 'reader'
-🔄 Executing step 'reader' (attempt 1 of 2)
-✅ Step 'reader' completed successfully
-
-📋 Step 2 of 4: 'parser'
-🔄 Executing step 'parser' (attempt 1 of 1)
-✅ Step 'parser' completed successfully
-
-📋 Step 3 of 4: 'transformer'
-🔄 Executing step 'transformer' (attempt 1 of 3)
-⚠️  Step 'transformer' failed (attempt 1): Connection timeout. Retrying...
-🔄 Executing step 'transformer' (attempt 2 of 3)
-✅ Step 'transformer' completed successfully
-
-📋 Step 4 of 4: 'writer'
-🔄 Executing step 'writer' (attempt 1 of 1)
-✅ Step 'writer' completed successfully
-
-🎉 Pipeline completed successfully!
-📊 Summary: 4 executed, 0 failed, 0 skipped
-⏱️  Total time: 1.2s
-Final Result: CSV data (245 rows, 12 columns)
-✅ Pipeline execution completed successfully!
-```
-
-**Error Recovery Output:**
-```bash
-📋 Step 2 of 5: 'unreliable_step'
-🔄 Executing step 'unreliable_step' (attempt 1 of 3)
-⚠️  Step 'unreliable_step' failed (attempt 1): Network error. Retrying...
-🔄 Executing step 'unreliable_step' (attempt 2 of 3)
-⚠️  Step 'unreliable_step' failed (attempt 2): Network error. Retrying...
-🔄 Executing step 'unreliable_step' (attempt 3 of 3)
-❌ Step 'unreliable_step' failed after 3 attempts: Network error
-⚠️  Step failed but continue_on_error is true, continuing...
-
-📋 Step 3 of 5: 'fallback_step'
-🔄 Executing step 'fallback_step' (attempt 1 of 1)
-✅ Step 'fallback_step' completed successfully
-```
+[**→ Full `run` documentation**](run.md)
+[**→ Full `run` documentation**](run.md)
 
 ## Usage Patterns
 
 ### Project Workflow
+
+The typical workflow for working with Oxide Flow projects:
 
 ```bash
 # 1. Initialize new project
@@ -267,35 +158,38 @@ oxide_flow init my_analytics
 # 2. Navigate to project
 cd my_analytics
 
-# 3. Edit pipeline configuration
-nano pipelines/pipeline.yaml
+# 3. List available pipelines
+oxide_flow pipeline list
 
-# 4. Run pipeline
-oxide_flow run
+# 4. Create additional pipelines from templates
+oxide_flow pipeline add data_cleaner --template etl
 
-# 5. Create additional pipelines
-cp pipelines/pipeline.yaml pipelines/data_cleaner.yaml
-nano pipelines/data_cleaner.yaml
+# 5. Validate pipeline before running
+oxide_flow pipeline test data_cleaner
 
-# 6. Run specific pipeline
+# 6. Run pipeline
 oxide_flow run data_cleaner
 ```
 
 ### Development Workflow
 
+For development and testing:
+
 ```bash
 # Run with verbose output for debugging
 oxide_flow run --verbose my_pipeline
 
-# Test pipeline with different configurations
+# Validate pipeline structure
+oxide_flow pipeline test my_pipeline --dry-run
+
+# Test with different configurations
 CONFIG_FILE=dev.json oxide_flow run test_pipeline
 CONFIG_FILE=prod.json oxide_flow run test_pipeline
-
-# Quick validation of pipeline structure
-oxide_flow run validation_pipeline
 ```
 
 ### Production Workflow
+
+For production deployment:
 
 ```bash
 # Set production environment variables
@@ -303,6 +197,9 @@ export DATA_INPUT_PATH="/data/input/daily_export.csv"
 export DATA_OUTPUT_PATH="/data/output/processed_$(date +%Y%m%d).csv"
 export PROCESSING_TIMEOUT="300"
 export RETRY_COUNT="5"
+
+# Validate before running
+oxide_flow pipeline test production_etl --verbose
 
 # Run production pipeline
 oxide_flow run production_etl
@@ -318,9 +215,11 @@ fi
 
 ## Environment Variables
 
+Oxide Flow supports dynamic configuration through environment variables, allowing flexible pipeline behavior across different environments.
+
 ### Pipeline Configuration
 
-Oxide Flow supports dynamic configuration through environment variables in pipeline YAML files:
+Environment variables can be used directly in pipeline YAML files:
 
 ```yaml
 # In pipeline.yaml
@@ -355,28 +254,14 @@ export RETRY_COUNT="3"
 export STRICT_MODE="true"
 ```
 
-**Format Options:**
-```bash
-export CSV_DELIMITER=","
-export JSON_PRETTY="true"
-export INCLUDE_HEADERS="true"
-```
-
-### Runtime Environment
-
-**Logging and Debug:**
+**Runtime Environment:**
 ```bash
 export RUST_LOG="debug"          # Rust logging level
 export OXIDE_FLOW_DEBUG="1"      # Enable debug mode
-```
-
-**Performance:**
-```bash
 export OXIDE_FLOW_WORKERS="4"    # Number of worker threads
-export OXIDE_FLOW_MEMORY="2GB"   # Memory limit
 ```
 
-## Exit Codes
+See the [`run` command documentation](run.md) for detailed environment variable usage.## Exit Codes
 
 Oxide Flow uses standard exit codes for integration with scripts and monitoring systems:
 
@@ -412,23 +297,117 @@ fi
 
 ## Examples
 
-### Basic Usage
+### Complete Project Workflow
 
-**Initialize and run default pipeline:**
+**Initialize and run a new project:**
 ```bash
+# Create project
 oxide_flow init hello_world
 cd hello_world
+
+# Check what pipelines are available
+oxide_flow pipeline list
+
+# Add input data
 echo '{"name": "John", "age": 30}' > input.json
+
+# Run default pipeline
 oxide_flow run
+
+# Check output
+cat output.csv
 ```
 
-**Output:**
+### Pipeline Development Workflow
+
+**Create and test custom pipelines:**
+```bash
+# Start in project directory
+cd my_project
+
+# Create ETL pipeline from template
+oxide_flow pipeline add data_processor --template etl --description "Process customer data"
+
+# Validate the pipeline
+oxide_flow pipeline test data_processor --verbose
+
+# Edit if needed
+nano pipelines/data_processor.yaml
+
+# Test again
+oxide_flow pipeline test data_processor
+
+# Run when ready
+oxide_flow run data_processor
 ```
-🔍 Running pipeline 'pipeline' from: ./pipelines/pipeline.yaml
-Running pipeline: JSON to CSV Converter
-Steps: 4
-🚀 Starting pipeline execution: JSON to CSV Converter
-✅ Step 'reader' completed successfully
+
+### Production Deployment
+
+**Deploy and run pipelines in production:**
+```bash
+# Clone/copy project to production environment
+cd /opt/pipelines/customer_analytics
+
+# List available pipelines
+oxide_flow pipeline list --verbose
+
+# Set production environment
+export DATA_INPUT_PATH="/data/input/customers.json"
+export DATA_OUTPUT_PATH="/data/output/processed_customers.csv"
+export PROCESSING_MODE="production"
+
+# Validate before running
+oxide_flow pipeline test customer_etl --verbose
+
+# Run production pipeline
+oxide_flow run customer_etl
+
+# Check exit status for monitoring
+echo "Pipeline exit code: $?"
+```
+
+### Multi-Pipeline Processing
+
+**Process data through multiple pipelines:**
+```bash
+# Process raw data
+oxide_flow run data_ingestion
+
+# Validate processed data
+oxide_flow run data_validation
+
+# Generate reports
+oxide_flow run report_generation
+
+# Archive results
+oxide_flow run data_archival
+```
+
+## Command Reference
+
+For detailed information about each command, see:
+
+- [`init`](init.md) - Project initialization and setup
+- [`pipeline`](pipeline.md) - Pipeline management (list, add, test, info)
+- [`run`](run.md) - Pipeline execution and monitoring
+
+## Getting Help
+
+Each command provides built-in help:
+
+```bash
+# General help
+oxide_flow --help
+
+# Command-specific help
+oxide_flow init --help
+oxide_flow pipeline --help
+oxide_flow run --help
+
+# Subcommand help
+oxide_flow pipeline list --help
+oxide_flow pipeline add --help
+```
 ✅ Step 'parser' completed successfully
 ✅ Step 'formatter' completed successfully
 ✅ Step 'writer' completed successfully

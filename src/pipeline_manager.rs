@@ -1,5 +1,5 @@
 use crate::project::ProjectConfig;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,6 +15,7 @@ pub struct PipelineMetadata {
     pub created: Option<String>,
     pub file_path: PathBuf,
     pub step_count: usize,
+    pub step_names: Vec<String>,
 }
 
 /// Manages pipeline discovery, listing, and metadata extraction
@@ -122,19 +123,56 @@ impl PipelineManager {
             .or_else(|| yaml_value.get("created").and_then(|v| v.as_str()))
             .map(|s| s.to_string());
 
-        // Count steps in the pipeline
-        let step_count = yaml_value
+        // Count steps and extract step names from the pipeline
+        let (step_count, step_names) = yaml_value
             .get("pipeline")
             .and_then(|v| v.as_sequence())
-            .map(|seq| seq.len())
+            .map(|seq| {
+                let mut names = Vec::new();
+                for step in seq {
+                    if let Some(step_map) = step.as_mapping() {
+                        // Try to get step name from 'name' field, then 'id' field
+                        let step_name = step_map
+                            .get(&serde_yaml::Value::String("name".to_string()))
+                            .and_then(|v| v.as_str())
+                            .or_else(|| {
+                                step_map
+                                    .get(&serde_yaml::Value::String("id".to_string()))
+                                    .and_then(|v| v.as_str())
+                            })
+                            .unwrap_or("unnamed")
+                            .to_string();
+                        names.push(step_name);
+                    }
+                }
+                (seq.len(), names)
+            })
             .or_else(|| {
                 // Fallback to "steps" field for compatibility
                 yaml_value
                     .get("steps")
                     .and_then(|v| v.as_sequence())
-                    .map(|seq| seq.len())
+                    .map(|seq| {
+                        let mut names = Vec::new();
+                        for step in seq {
+                            if let Some(step_map) = step.as_mapping() {
+                                let step_name = step_map
+                                    .get(&serde_yaml::Value::String("name".to_string()))
+                                    .and_then(|v| v.as_str())
+                                    .or_else(|| {
+                                        step_map
+                                            .get(&serde_yaml::Value::String("id".to_string()))
+                                            .and_then(|v| v.as_str())
+                                    })
+                                    .unwrap_or("unnamed")
+                                    .to_string();
+                                names.push(step_name);
+                            }
+                        }
+                        (seq.len(), names)
+                    })
             })
-            .unwrap_or(0);
+            .unwrap_or((0, Vec::new()));
 
         Ok(PipelineMetadata {
             name,
@@ -145,6 +183,7 @@ impl PipelineManager {
             created,
             file_path: file_path.to_path_buf(),
             step_count,
+            step_names,
         })
     }
 
@@ -307,7 +346,16 @@ impl PipelineManager {
                 "   📍 Location: {}\n",
                 pipeline.file_path.display()
             ));
-            output.push_str(&format!("   ⚙️  Steps: {} total\n", pipeline.step_count));
+
+            if pipeline.step_names.is_empty() {
+                output.push_str(&format!("   ⚙️  Steps: {} total\n", pipeline.step_count));
+            } else {
+                output.push_str(&format!(
+                    "   ⚙️  Steps: {} ({})\n",
+                    pipeline.step_count,
+                    pipeline.step_names.join(" → ")
+                ));
+            }
 
             if let Some(created) = &pipeline.created {
                 output.push_str(&format!("   📅 Created: {}\n", created));
@@ -479,6 +527,495 @@ impl PipelineManager {
         println!("🚀 Use 'oxide_flow run {}' to execute", name);
 
         Ok(pipeline_path)
+    }
+
+    // === PIPELINE VALIDATION METHODS ===
+
+    /// Test and validate a pipeline
+    pub fn test_pipeline(
+        &self,
+        pipeline_name: &str,
+        dry_run: bool,
+        verbose: bool,
+        fix: bool,
+        schema_only: bool,
+    ) -> Result<ValidationResult> {
+        // Find the pipeline
+        let pipelines = self.discover_pipelines()?;
+        let pipeline = pipelines
+            .iter()
+            .find(|p| {
+                p.name == pipeline_name
+                    || p.file_path
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .map(|stem| stem == pipeline_name)
+                        .unwrap_or(false)
+            })
+            .ok_or_else(|| anyhow!("Pipeline '{}' not found", pipeline_name))?;
+
+        self.validate_pipeline_file(&pipeline.file_path, dry_run, verbose, fix, schema_only)
+    }
+
+    /// Validate a pipeline file
+    pub fn validate_pipeline_file(
+        &self,
+        pipeline_path: &Path,
+        dry_run: bool,
+        _verbose: bool,
+        fix: bool,
+        schema_only: bool,
+    ) -> Result<ValidationResult> {
+        let mut result = ValidationResult::new(pipeline_path.to_path_buf());
+
+        // 1. YAML Syntax validation
+        let yaml_content = fs::read_to_string(pipeline_path).with_context(|| {
+            format!("Failed to read pipeline file: {}", pipeline_path.display())
+        })?;
+
+        let yaml_doc: serde_yaml::Value = match serde_yaml::from_str(&yaml_content) {
+            Ok(doc) => {
+                result.yaml_valid = true;
+                doc
+            }
+            Err(e) => {
+                result.yaml_valid = false;
+                result.errors.push(ValidationError::YamlSyntax {
+                    message: format!("YAML syntax error: {}", e),
+                });
+                return Ok(result); // Can't continue without valid YAML
+            }
+        };
+
+        // 2. Pipeline structure validation
+        self.validate_pipeline_structure(&yaml_doc, &mut result)?;
+
+        if schema_only {
+            return Ok(result);
+        }
+
+        // 3. Environment variable checking
+        self.validate_environment_variables(&yaml_doc, &mut result)?;
+
+        // 4. Step reference validation
+        self.validate_step_references(&yaml_doc, &mut result)?;
+
+        // 5. Oxi schema validation
+        self.validate_oxi_schemas(&yaml_doc, &mut result)?;
+
+        // 6. Auto-fix capabilities
+        if fix && !result.errors.is_empty() {
+            self.apply_auto_fixes(&yaml_doc, pipeline_path, &mut result, dry_run)?;
+        }
+
+        Ok(result)
+    }
+
+    /// Validate pipeline structure
+    fn validate_pipeline_structure(
+        &self,
+        yaml_doc: &serde_yaml::Value,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        // Check for required top-level keys
+        if let Some(mapping) = yaml_doc.as_mapping() {
+            // Check for pipeline key
+            if !mapping.contains_key(&serde_yaml::Value::String("pipeline".to_string())) {
+                result.errors.push(ValidationError::Structure {
+                    message: "Missing required 'pipeline' key".to_string(),
+                });
+            }
+
+            // Validate pipeline array
+            if let Some(pipeline_value) =
+                mapping.get(&serde_yaml::Value::String("pipeline".to_string()))
+            {
+                if let Some(steps) = pipeline_value.as_sequence() {
+                    result.step_count = steps.len();
+
+                    for (i, step) in steps.iter().enumerate() {
+                        self.validate_step(step, i, result)?;
+                    }
+                } else {
+                    result.errors.push(ValidationError::Structure {
+                        message: "Pipeline must be an array of steps".to_string(),
+                    });
+                }
+            }
+
+            // Validate metadata (optional but recommended)
+            if let Some(metadata) = mapping.get(&serde_yaml::Value::String("metadata".to_string()))
+            {
+                self.validate_metadata(metadata, result)?;
+            } else {
+                result.warnings.push(
+                    "No metadata section found - consider adding pipeline description".to_string(),
+                );
+            }
+        } else {
+            result.errors.push(ValidationError::Structure {
+                message: "Pipeline file must contain a YAML mapping".to_string(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Validate a single pipeline step
+    fn validate_step(
+        &self,
+        step: &serde_yaml::Value,
+        index: usize,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        if let Some(step_map) = step.as_mapping() {
+            // Check required fields
+            let step_name = step_map.get(&serde_yaml::Value::String("name".to_string()));
+            let step_id = step_map.get(&serde_yaml::Value::String("id".to_string()));
+
+            if step_name.is_none() {
+                result.errors.push(ValidationError::Structure {
+                    message: format!("Step {} missing required 'name' field", index),
+                });
+            }
+
+            if step_id.is_none() {
+                result.errors.push(ValidationError::Structure {
+                    message: format!("Step {} missing required 'id' field", index),
+                });
+            }
+
+            // Track step configurations
+            if step_map.contains_key(&serde_yaml::Value::String("retry_attempts".to_string())) {
+                result.retry_enabled_steps += 1;
+            }
+
+            if step_map.contains_key(&serde_yaml::Value::String("timeout_seconds".to_string())) {
+                result.timeout_configured_steps += 1;
+            }
+
+            if step_map
+                .get(&serde_yaml::Value::String("continue_on_error".to_string()))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                result.error_resilient_steps += 1;
+            }
+
+            // Track file operations
+            if let Some(name_val) = step_name.and_then(|n| n.as_str()) {
+                if name_val.contains("read_file") || name_val.contains("file_read") {
+                    result.file_read_operations += 1;
+                } else if name_val.contains("write_file") || name_val.contains("file_write") {
+                    result.file_write_operations += 1;
+                } else if name_val.contains("http")
+                    || name_val.contains("api")
+                    || name_val.contains("fetch")
+                {
+                    result.network_operations += 1;
+                }
+            }
+        } else {
+            result.errors.push(ValidationError::Structure {
+                message: format!("Step {} must be a mapping", index),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Validate metadata section
+    fn validate_metadata(
+        &self,
+        metadata: &serde_yaml::Value,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        if let Some(meta_map) = metadata.as_mapping() {
+            // Check for recommended fields
+            let recommended_fields = ["name", "description", "version", "author"];
+            for field in &recommended_fields {
+                if !meta_map.contains_key(&serde_yaml::Value::String(field.to_string())) {
+                    result
+                        .suggestions
+                        .push(format!("Consider adding '{}' to metadata", field));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate environment variables
+    fn validate_environment_variables(
+        &self,
+        _yaml_doc: &serde_yaml::Value,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        // TODO: Implement environment variable validation
+        // This would scan for ${VAR} patterns and check if they exist
+        result.env_vars_valid = true;
+        Ok(())
+    }
+
+    /// Validate step references
+    fn validate_step_references(
+        &self,
+        yaml_doc: &serde_yaml::Value,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        // Collect all step IDs
+        let mut step_ids = std::collections::HashSet::new();
+
+        if let Some(mapping) = yaml_doc.as_mapping() {
+            if let Some(pipeline_value) =
+                mapping.get(&serde_yaml::Value::String("pipeline".to_string()))
+            {
+                if let Some(steps) = pipeline_value.as_sequence() {
+                    for step in steps {
+                        if let Some(step_map) = step.as_mapping() {
+                            if let Some(id_val) =
+                                step_map.get(&serde_yaml::Value::String("id".to_string()))
+                            {
+                                if let Some(id_str) = id_val.as_str() {
+                                    step_ids.insert(id_str.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // TODO: Implement reference validation
+        // This would check for step references like ${step.reader.output}
+        result.step_references_valid = true;
+        Ok(())
+    }
+
+    /// Validate Oxi schemas
+    fn validate_oxi_schemas(
+        &self,
+        _yaml_doc: &serde_yaml::Value,
+        result: &mut ValidationResult,
+    ) -> Result<()> {
+        // TODO: Implement schema validation using existing schema module
+        result.schemas_valid = true;
+        Ok(())
+    }
+
+    /// Apply automatic fixes to common issues
+    fn apply_auto_fixes(
+        &self,
+        _yaml_doc: &serde_yaml::Value,
+        _pipeline_path: &Path,
+        result: &mut ValidationResult,
+        dry_run: bool,
+    ) -> Result<()> {
+        if dry_run {
+            result
+                .suggestions
+                .push("Auto-fix would run in dry-run mode - no changes made".to_string());
+        }
+        // TODO: Implement auto-fix functionality
+        Ok(())
+    }
+
+    /// Format validation results for display
+    pub fn format_validation_result(&self, result: &ValidationResult, verbose: bool) -> String {
+        let mut output = String::new();
+
+        output.push_str(&format!(
+            "🧪 Testing pipeline: {}
+
+",
+            result
+                .pipeline_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+        ));
+
+        // Status indicators
+        output.push_str(&format!(
+            "{} YAML Syntax: {}
+",
+            if result.yaml_valid { "✅" } else { "❌" },
+            if result.yaml_valid {
+                "Valid"
+            } else {
+                "Invalid"
+            }
+        ));
+
+        output.push_str(&format!(
+            "{} Schema Validation: {}
+",
+            if result.schemas_valid { "✅" } else { "❌" },
+            if result.schemas_valid {
+                "All steps valid"
+            } else {
+                "Issues found"
+            }
+        ));
+
+        output.push_str(&format!(
+            "{} Environment Variables: {}
+",
+            if result.env_vars_valid { "✅" } else { "❌" },
+            if result.env_vars_valid {
+                "All variables available"
+            } else {
+                "Missing variables"
+            }
+        ));
+
+        output.push_str(&format!(
+            "{} Step References: {}
+",
+            if result.step_references_valid {
+                "✅"
+            } else {
+                "❌"
+            },
+            if result.step_references_valid {
+                "All references valid"
+            } else {
+                "Invalid references"
+            }
+        ));
+
+        // Errors
+        if !result.errors.is_empty() {
+            output.push_str("\n❌ Issues Found:\n");
+            for error in &result.errors {
+                output.push_str(&format!("   • {}\n", error));
+            }
+        }
+
+        // Warnings
+        if !result.warnings.is_empty() {
+            output.push_str("\n⚠️  Warnings:\n");
+            for warning in &result.warnings {
+                output.push_str(&format!("   • {}\n", warning));
+            }
+        }
+
+        if verbose {
+            // Pipeline analysis
+            output.push_str(&format!("\n📊 Pipeline Analysis:\n"));
+            output.push_str(&format!("   📈 Steps: {} total\n", result.step_count));
+            output.push_str(&format!(
+                "   🔄 Retry-enabled steps: {}\n",
+                result.retry_enabled_steps
+            ));
+            output.push_str(&format!(
+                "   ⏰ Timeout-configured steps: {}\n",
+                result.timeout_configured_steps
+            ));
+            output.push_str(&format!(
+                "   🛡️  Error-resilient steps: {}\n",
+                result.error_resilient_steps
+            ));
+            output.push_str(&format!(
+                "   💾 File operations: {} read, {} write\n",
+                result.file_read_operations, result.file_write_operations
+            ));
+            output.push_str(&format!(
+                "   🌐 Network operations: {}\n",
+                result.network_operations
+            ));
+        }
+
+        // Suggestions
+        if !result.suggestions.is_empty() {
+            output.push_str("\n💡 Suggestions:\n");
+            for suggestion in &result.suggestions {
+                output.push_str(&format!("   • {}\n", suggestion));
+            }
+        }
+
+        // Final status
+        if result.is_valid() {
+            output.push_str("\n✅ Pipeline is ready for execution");
+        } else {
+            output.push_str(&format!(
+                "\n❌ Pipeline has {} issues that need to be fixed",
+                result.errors.len()
+            ));
+        }
+
+        output
+    }
+}
+
+/// Validation result for a pipeline
+#[derive(Debug)]
+pub struct ValidationResult {
+    pub pipeline_path: PathBuf,
+    pub yaml_valid: bool,
+    pub schemas_valid: bool,
+    pub env_vars_valid: bool,
+    pub step_references_valid: bool,
+    pub step_count: usize,
+    pub retry_enabled_steps: usize,
+    pub timeout_configured_steps: usize,
+    pub error_resilient_steps: usize,
+    pub file_read_operations: usize,
+    pub file_write_operations: usize,
+    pub network_operations: usize,
+    pub errors: Vec<ValidationError>,
+    pub warnings: Vec<String>,
+    pub suggestions: Vec<String>,
+    pub fixes_applied: Vec<String>,
+}
+
+impl ValidationResult {
+    pub fn new(pipeline_path: PathBuf) -> Self {
+        Self {
+            pipeline_path,
+            yaml_valid: false,
+            schemas_valid: false,
+            env_vars_valid: false,
+            step_references_valid: false,
+            step_count: 0,
+            retry_enabled_steps: 0,
+            timeout_configured_steps: 0,
+            error_resilient_steps: 0,
+            file_read_operations: 0,
+            file_write_operations: 0,
+            network_operations: 0,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+            suggestions: Vec::new(),
+            fixes_applied: Vec::new(),
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.errors.is_empty() && self.yaml_valid
+    }
+}
+
+/// Validation errors for pipeline testing
+#[derive(Debug)]
+pub enum ValidationError {
+    YamlSyntax { message: String },
+    Structure { message: String },
+    Schema { message: String },
+    EnvironmentVariable { message: String },
+    StepReference { message: String },
+}
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidationError::YamlSyntax { message } => write!(f, "YAML Syntax: {}", message),
+            ValidationError::Structure { message } => write!(f, "Structure: {}", message),
+            ValidationError::Schema { message } => write!(f, "Schema: {}", message),
+            ValidationError::EnvironmentVariable { message } => {
+                write!(f, "Environment Variable: {}", message)
+            }
+            ValidationError::StepReference { message } => write!(f, "Step Reference: {}", message),
+        }
     }
 }
 

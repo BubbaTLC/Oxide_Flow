@@ -167,21 +167,23 @@ async fn handle_pipeline_command(action: PipelineAction) -> anyhow::Result<()> {
             fix,
             schema,
         } => {
-            println!("🧪 Testing pipeline: {}", name);
-            if dry_run {
-                println!("  Dry run mode enabled");
+            let manager = PipelineManager::new()?;
+
+            match manager.test_pipeline(&name, dry_run, verbose, fix, schema) {
+                Ok(result) => {
+                    let output = manager.format_validation_result(&result, verbose);
+                    println!("{}", output);
+
+                    if !result.is_valid() {
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("❌ Pipeline testing failed: {}", e);
+                    std::process::exit(1);
+                }
             }
-            if verbose {
-                println!("  Verbose mode enabled");
-            }
-            if fix {
-                println!("  Auto-fix mode enabled");
-            }
-            if schema {
-                println!("  Schema validation only");
-            }
-            // TODO: Implement pipeline testing functionality
-            println!("✅ Pipeline testing will be implemented in Phase 4");
+
             Ok(())
         }
         PipelineAction::Info {
@@ -234,7 +236,15 @@ async fn handle_pipeline_command(action: PipelineAction) -> anyhow::Result<()> {
                     println!("   Location: {}", pipeline.file_path.display());
 
                     println!("\n⚙️  Configuration:");
-                    println!("   Steps: {} total", pipeline.step_count);
+                    if pipeline.step_names.is_empty() {
+                        println!("   Steps: {} total", pipeline.step_count);
+                    } else {
+                        println!(
+                            "   Steps: {} ({})",
+                            pipeline.step_count,
+                            pipeline.step_names.join(" → ")
+                        );
+                    }
 
                     if schema {
                         println!("\n🔧 Schema information will be implemented in Phase 4");

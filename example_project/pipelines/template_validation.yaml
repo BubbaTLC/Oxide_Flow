@@ -1,0 +1,44 @@
+# Data Validation Pipeline Template
+# Data quality checking and validation
+
+pipeline:
+  - name: read_file
+    id: reader
+    config:
+      path: "input/data.json"
+    retry_attempts: 3
+
+  - name: parse_json
+    id: parser
+    continue_on_error: false
+
+  - name: json
+    id: validator
+    config:
+      schema: |
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name"],
+            "properties": {
+              "id": {"type": "number"},
+              "name": {"type": "string"}
+            }
+          }
+        }
+    continue_on_error: false
+
+  - name: write_file
+    id: writer
+    config:
+      path: "output/validated_output.csv"
+      create_directories: true
+
+# Pipeline metadata
+metadata:
+  name: "Template Validation"
+  description: "Validation template test pipeline"
+  version: "1.0.0"
+  author: "Template Testing"
+  tags: ["validation", "quality", "schema"]

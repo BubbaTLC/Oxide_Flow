@@ -1,0 +1,44 @@
+# ETL Pipeline Template
+# Extract, Transform, Load pattern for data processing
+
+pipeline:
+  # Extract phase
+  - name: read_file
+    id: extractor
+    config:
+      path: "input/data.json"
+    retry_attempts: 3
+    timeout_seconds: 30
+
+  # Transform phase
+  - name: parse_json
+    id: parser
+    continue_on_error: false
+
+  - name: flatten
+    id: transformer
+    config:
+      separator: "_"
+    continue_on_error: true
+
+  - name: format_csv
+    id: formatter
+    config:
+      headers: true
+      delimiter: ","
+
+  # Load phase
+  - name: write_file
+    id: loader
+    config:
+      path: "output/output.csv"
+      create_directories: true
+    retry_attempts: 2
+
+# Pipeline metadata
+metadata:
+  name: "Template Etl"
+  description: "ETL template test pipeline"
+  version: "1.0.0"
+  author: "Template Testing"
+  tags: ["etl", "data-processing", "production"]

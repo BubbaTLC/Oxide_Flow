@@ -70,7 +70,7 @@ After successful implementation:
 - Note any new insights or improvements for future phases
 
 ### 5. **Documentation Updates**
-- Update relevant documentation files
+- Update relevant documentation files in the `docs` directory
 - Add examples and usage patterns
 - Document new CLI commands, functions, or features
 - Ensure consistency with existing documentation

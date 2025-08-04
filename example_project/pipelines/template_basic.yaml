@@ -1,0 +1,24 @@
+# Basic Pipeline Template
+# Simple read → transform → write pattern
+
+pipeline:
+  - name: read_file
+    id: reader
+    config:
+      path: "input.json"
+
+  - name: parse_json
+    id: parser
+
+  - name: write_file
+    id: writer
+    config:
+      path: "output/result.json"
+
+# Pipeline metadata
+metadata:
+  name: "Template Basic"
+  description: "Basic template test pipeline"
+  version: "1.0.0"
+  author: "Template Testing"
+  tags: ["basic", "simple"]
