@@ -5,7 +5,7 @@ pipeline:
   - name: read_file
     id: reader
     config:
-      path: "input.json"
+      path: "input/input.json"
 
   - name: parse_json
     id: parser
