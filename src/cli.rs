@@ -33,4 +33,82 @@ pub enum Commands {
         #[arg(short, long)]
         config: Option<String>,
     },
+    /// Manage pipelines (list, add, test, info)
+    Pipeline {
+        #[command(subcommand)]
+        action: PipelineAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PipelineAction {
+    /// List available pipelines
+    List {
+        /// Filter by tags (comma-separated)
+        #[arg(short, long)]
+        tags: Option<String>,
+
+        /// Filter by keyword in name/description
+        #[arg(short, long)]
+        filter: Option<String>,
+
+        /// Show detailed information
+        #[arg(short, long)]
+        verbose: bool,
+    },
+    /// Create a new pipeline from a template
+    Add {
+        /// Name of the new pipeline
+        name: String,
+
+        /// Template to use (default: "basic")
+        #[arg(short, long, default_value = "basic")]
+        template: String,
+
+        /// Pipeline description
+        #[arg(short, long)]
+        description: Option<String>,
+
+        /// Pipeline author
+        #[arg(short, long)]
+        author: Option<String>,
+    },
+    /// Test/validate a pipeline
+    Test {
+        /// Name of the pipeline to test
+        name: String,
+
+        /// Validate only, don't execute
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Show detailed validation information
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Attempt to fix common issues
+        #[arg(long)]
+        fix: bool,
+
+        /// Validate against schemas only
+        #[arg(long)]
+        schema: bool,
+    },
+    /// Show detailed pipeline information
+    Info {
+        /// Name of the pipeline
+        name: String,
+
+        /// Show configuration schema for all steps
+        #[arg(long)]
+        schema: bool,
+
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+
+        /// Output in YAML format
+        #[arg(long)]
+        yaml: bool,
+    },
 }

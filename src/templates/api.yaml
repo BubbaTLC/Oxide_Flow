@@ -1,0 +1,40 @@
+# API Data Processing Pipeline Template
+# Processing data from API endpoints
+
+pipeline:
+  - name: read_stdin
+    id: api_reader
+    config:
+      format: "json"
+    timeout_seconds: 30
+
+  - name: parse_json
+    id: parser
+    continue_on_error: false
+
+  - name: json
+    id: processor
+    config:
+      query: ".data[]"
+    continue_on_error: true
+
+  - name: format_csv
+    id: formatter
+    config:
+      headers: true
+      delimiter: ","
+
+  - name: write_file
+    id: writer
+    config:
+      path: "output/api_{{output_file}}"
+      create_directories: true
+    retry_attempts: 3
+
+# Pipeline metadata
+metadata:
+  name: "{{pipeline_name}}"
+  description: "{{pipeline_description}}"
+  version: "1.0.0"
+  author: "{{pipeline_author}}"
+  tags: ["api", "streaming", "realtime"]

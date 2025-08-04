@@ -258,7 +258,7 @@ mod tests {
     fn test_nested_config_resolution() {
         env::set_var("BASE_PATH", "/data");
 
-        let mut resolver = ConfigResolver::default();
+        let resolver = ConfigResolver::default();
 
         let config = serde_yaml::from_str(
             r#"

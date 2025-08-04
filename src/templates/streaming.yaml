@@ -1,0 +1,40 @@
+# Streaming Data Pipeline Template
+# Real-time data processing with buffering
+
+pipeline:
+  - name: read_stdin
+    id: stream_reader
+    config:
+      buffer_size: 1024
+      format: "json"
+    timeout_seconds: 5
+
+  - name: parse_json
+    id: parser
+    continue_on_error: true
+
+  - name: json
+    id: filter
+    config:
+      query: "select(.timestamp > (now - 3600))"
+    continue_on_error: true
+
+  - name: flatten
+    id: transformer
+    config:
+      separator: "."
+    continue_on_error: true
+
+  - name: write_stdout
+    id: stream_writer
+    config:
+      format: "json"
+      flush_interval: 1
+
+# Pipeline metadata
+metadata:
+  name: "{{pipeline_name}}"
+  description: "{{pipeline_description}}"
+  version: "1.0.0"
+  author: "{{pipeline_author}}"
+  tags: ["streaming", "realtime", "buffer"]

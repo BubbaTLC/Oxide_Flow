@@ -1,0 +1,56 @@
+# Batch Processing Pipeline Template
+# Robust batch processing with comprehensive error handling
+
+pipeline:
+  - name: read_file
+    id: reader
+    config:
+      path: "input/batch/{{input_file}}"
+    retry_attempts: 5
+    timeout_seconds: 60
+    continue_on_error: false
+
+  - name: parse_json
+    id: parser
+    retry_attempts: 3
+    continue_on_error: false
+
+  - name: flatten
+    id: transformer
+    config:
+      separator: "_"
+      max_depth: 3
+    retry_attempts: 2
+    continue_on_error: true
+
+  - name: format_csv
+    id: formatter
+    config:
+      headers: true
+      delimiter: ","
+      quote_all: true
+    continue_on_error: true
+
+  - name: write_file
+    id: writer
+    config:
+      path: "output/batch/{{output_file}}"
+      create_directories: true
+      backup: true
+    retry_attempts: 3
+    timeout_seconds: 30
+
+  - name: write_file
+    id: backup_writer
+    config:
+      path: "backup/{{backup_file}}"
+      create_directories: true
+    continue_on_error: true
+
+# Pipeline metadata
+metadata:
+  name: "{{pipeline_name}}"
+  description: "{{pipeline_description}}"
+  version: "1.0.0"
+  author: "{{pipeline_author}}"
+  tags: ["batch", "robust", "error-handling"]

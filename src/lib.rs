@@ -4,6 +4,7 @@ pub mod config_resolver;
 pub mod error;
 pub mod oxis;
 pub mod pipeline;
+pub mod pipeline_manager;
 pub mod project;
 pub mod schema;
 pub mod types;

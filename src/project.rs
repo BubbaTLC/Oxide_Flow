@@ -83,6 +83,11 @@ impl ProjectConfig {
         )
     }
 
+    /// Get the configured pipeline directory as a PathBuf
+    pub fn get_pipeline_directory(&self) -> PathBuf {
+        PathBuf::from(&self.settings.pipeline_dir)
+    }
+
     /// List all available pipelines in the configured directory
     pub fn list_available_pipelines(&self) -> Result<Vec<String>> {
         let pipeline_dir = Path::new(&self.settings.pipeline_dir);

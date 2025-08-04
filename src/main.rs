@@ -1,8 +1,9 @@
 use clap::Parser;
 use oxide_flow::{
-    cli::{Cli, Commands},
+    cli::{Cli, Commands, PipelineAction},
     config_resolver::ConfigResolver,
     pipeline::Pipeline,
+    pipeline_manager::PipelineManager,
     project::{self, ProjectConfig},
     types::OxiData,
 };
@@ -32,6 +33,13 @@ async fn main() {
             Ok(_) => println!("✅ Pipeline execution completed successfully!"),
             Err(e) => {
                 eprintln!("❌ Pipeline execution failed: {e}");
+                std::process::exit(1);
+            }
+        },
+        Commands::Pipeline { action } => match handle_pipeline_command(action).await {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("❌ Pipeline command failed: {e}");
                 std::process::exit(1);
             }
         },
@@ -105,5 +113,138 @@ async fn run_pipeline_from_yaml(pipeline_path: &str) -> anyhow::Result<()> {
             "Pipeline execution failed with {} failed steps",
             result.steps_failed
         ))
+    }
+}
+
+/// Handle pipeline management commands
+async fn handle_pipeline_command(action: PipelineAction) -> anyhow::Result<()> {
+    match action {
+        PipelineAction::List {
+            tags,
+            filter,
+            verbose,
+        } => {
+            let manager = PipelineManager::new()?;
+            let mut pipelines = manager.discover_pipelines()?;
+
+            // Apply tag filter if provided
+            if let Some(tag_filter) = tags {
+                pipelines = manager.filter_by_tags(&pipelines, &tag_filter);
+            }
+
+            // Apply keyword filter if provided
+            if let Some(keyword_filter) = filter {
+                pipelines = manager.filter_by_keyword(&pipelines, &keyword_filter);
+            }
+
+            // Display results
+            let output = manager.format_pipeline_table(&pipelines, verbose);
+            println!("{}", output);
+
+            Ok(())
+        }
+        PipelineAction::Add {
+            name,
+            template,
+            description,
+            author,
+        } => {
+            let manager = PipelineManager::new()?;
+
+            // Create pipeline with provided parameters
+            println!("📝 Creating new pipeline: {}", name);
+            println!("  Template: {}", template);
+
+            manager.create_pipeline(&name, &template, description.as_deref(), author.as_deref())?;
+            println!("✅ Pipeline '{}' created successfully!", name);
+
+            Ok(())
+        }
+        PipelineAction::Test {
+            name,
+            dry_run,
+            verbose,
+            fix,
+            schema,
+        } => {
+            println!("🧪 Testing pipeline: {}", name);
+            if dry_run {
+                println!("  Dry run mode enabled");
+            }
+            if verbose {
+                println!("  Verbose mode enabled");
+            }
+            if fix {
+                println!("  Auto-fix mode enabled");
+            }
+            if schema {
+                println!("  Schema validation only");
+            }
+            // TODO: Implement pipeline testing functionality
+            println!("✅ Pipeline testing will be implemented in Phase 4");
+            Ok(())
+        }
+        PipelineAction::Info {
+            name,
+            schema,
+            json,
+            yaml,
+        } => {
+            // Use pipeline manager to find and display pipeline info
+            let manager = PipelineManager::new()?;
+            let pipelines = manager.discover_pipelines()?;
+
+            // Find the pipeline by name (check both display name and filename)
+            if let Some(pipeline) = pipelines.iter().find(|p| {
+                p.name == name
+                    || p.file_path
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .map(|stem| stem == name)
+                        .unwrap_or(false)
+            }) {
+                if json {
+                    // Output as JSON
+                    let json_output = serde_json::to_string_pretty(pipeline)?;
+                    println!("{}", json_output);
+                } else if yaml {
+                    // Output as YAML
+                    let yaml_output = serde_yaml::to_string(pipeline)?;
+                    println!("{}", yaml_output);
+                } else {
+                    // Standard formatted output
+                    println!("📋 Pipeline Information: {}\n", pipeline.name);
+
+                    println!("📝 Metadata:");
+                    if let Some(description) = &pipeline.description {
+                        println!("   Description: {}", description);
+                    }
+                    if let Some(version) = &pipeline.version {
+                        println!("   Version: {}", version);
+                    }
+                    if let Some(author) = &pipeline.author {
+                        println!("   Author: {}", author);
+                    }
+                    if let Some(tags) = &pipeline.tags {
+                        println!("   Tags: {}", tags.join(", "));
+                    }
+                    if let Some(created) = &pipeline.created {
+                        println!("   Created: {}", created);
+                    }
+                    println!("   Location: {}", pipeline.file_path.display());
+
+                    println!("\n⚙️  Configuration:");
+                    println!("   Steps: {} total", pipeline.step_count);
+
+                    if schema {
+                        println!("\n🔧 Schema information will be implemented in Phase 4");
+                    }
+                }
+            } else {
+                return Err(anyhow::anyhow!("Pipeline '{}' not found", name));
+            }
+
+            Ok(())
+        }
     }
 }

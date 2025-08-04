@@ -1,0 +1,23 @@
+# Oxide Flow Project Configuration
+project:
+  name: "example_project"
+  version: "1.0.0"
+  description: "Data transformation pipeline project"
+
+# Registry of available Oxis and their sources
+oxis:
+  core:
+    version: "1.0.0"
+    source: "builtin"
+    description: "Core Oxis for file I/O and basic transformations"
+
+# Project settings
+settings:
+  output_dir: "./output"
+  pipeline_dir: "./pipelines"
+  oxis_dir: "./oxis"
+
+# Default environment variables (can be overridden)
+environment:
+  LOG_LEVEL: "info"
+  OUTPUT_FORMAT: "pretty"

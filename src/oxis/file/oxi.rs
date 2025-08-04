@@ -145,7 +145,9 @@ mod tests {
 
         let result = oxi.process(OxiData::Empty, &config).await.unwrap();
 
-        assert_eq!(result.as_text().unwrap(), content);
+        // ReadFile returns JSON with content and metadata
+        let json_result = result.as_json().unwrap();
+        assert_eq!(json_result["content"].as_str().unwrap(), content);
     }
 
     #[tokio::test]

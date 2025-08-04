@@ -147,7 +147,7 @@ impl OxiSchema {
         // Value-specific validations
         match schema.property_type.as_str() {
             "string" => {
-                if let Some(serde_yaml::Value::String(s)) = value
+                if let Some(serde_yaml::Value::String(_s)) = value
                     .as_str()
                     .map(|s| serde_yaml::Value::String(s.to_string()))
                 {
