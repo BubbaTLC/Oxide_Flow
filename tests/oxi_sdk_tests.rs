@@ -39,6 +39,53 @@ impl Oxi for TestOxi {
     }
 
     async fn process(&self, input: OxiData, _config: &OxiConfig) -> Result<OxiData, OxiError> {
+        // Call the validate_input method
+        self.validate_input(&input)?;
+
+        // Validate input type
+        let input_type = match input.data() {
+            Data::Json(_) => OxiDataType::Json,
+            Data::Text(_) => OxiDataType::Text,
+            Data::Binary(_) => OxiDataType::Binary,
+            Data::Empty => OxiDataType::Empty,
+        };
+
+        if !self.limits.supported_input_types.contains(&input_type) {
+            return Err(OxiError::UnsupportedInputType {
+                oxi_name: self.name().to_string(),
+                input_type: format!("{:?}", input_type),
+            });
+        }
+
+        // Check memory limits
+        if let Some(max_memory_mb) = self.limits.max_memory_mb {
+            let estimated_memory = input.estimated_memory_usage();
+            let max_memory_bytes = max_memory_mb * 1024 * 1024;
+            if estimated_memory > max_memory_bytes {
+                return Err(OxiError::ValidationError {
+                    details: format!(
+                        "Memory limit exceeded: estimated {} bytes, limit {} MB",
+                        estimated_memory, max_memory_mb
+                    ),
+                });
+            }
+        }
+
+        // Check batch size limits for arrays
+        if let Some(max_batch_size) = self.limits.max_batch_size {
+            if let Data::Json(serde_json::Value::Array(arr)) = input.data() {
+                if arr.len() > max_batch_size {
+                    return Err(OxiError::ValidationError {
+                        details: format!(
+                            "Batch size limit exceeded: {} items, limit {}",
+                            arr.len(),
+                            max_batch_size
+                        ),
+                    });
+                }
+            }
+        }
+
         // Simple passthrough for testing
         Ok(input)
     }
@@ -76,9 +123,9 @@ async fn test_unsupported_input_type() {
     let oxi = TestOxi::new(limits);
     let text_input = OxiData::from_text("test".to_string());
 
-    // Should succeed because validation is not enforced in test Oxi
+    // Should fail because Text is not supported (only JSON is)
     let result = oxi.process(text_input, &OxiConfig::default()).await;
-    assert!(result.is_ok());
+    assert!(result.is_err());
 }
 
 #[tokio::test]

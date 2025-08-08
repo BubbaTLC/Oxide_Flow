@@ -1,0 +1,16 @@
+name: "Test Memory Batch Processing"
+description: "Test pipeline for demonstrating memory-based batch Oxi functionality"
+version: "1.0.0"
+
+pipeline:
+  - name: read_stdin
+  - name: parse_json
+  - name: batch
+    config:
+      batch_size: 100
+      max_memory_mb: 1
+      strategy: "Memory"
+  - name: format_json
+    config:
+      pretty: true
+  - name: write_stdout

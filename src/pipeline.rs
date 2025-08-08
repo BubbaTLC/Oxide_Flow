@@ -1,4 +1,5 @@
 use crate::config_resolver::ConfigResolver;
+use crate::oxis::batch::oxi::Batch;
 use crate::oxis::csv::oxi::FormatCsv;
 use crate::oxis::file::oxi::{ReadFile, WriteFile};
 use crate::oxis::flatten::oxi::Flatten;
@@ -319,6 +320,10 @@ impl PipelineStep {
 
         // Import and execute the specific Oxi
         let result = match self.name.as_str() {
+            "batch" => {
+                let oxi = Batch;
+                oxi.process(input, &config).await
+            }
             "read_file" => {
                 let oxi = ReadFile;
                 oxi.process(input, &config).await

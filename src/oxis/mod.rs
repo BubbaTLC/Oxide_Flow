@@ -1,3 +1,4 @@
+pub mod batch;
 pub mod csv;
 pub mod file;
 pub mod flatten;

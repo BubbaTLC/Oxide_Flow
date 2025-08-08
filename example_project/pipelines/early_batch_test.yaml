@@ -1,0 +1,11 @@
+name: "Early Batch Processing"
+description: "Pipeline with batch processing early in the chain"
+version: "1.0.0"
+
+pipeline:
+  - name: read_stdin
+  - name: batch
+    config:
+      batch_size: 2
+      strategy: "Size"
+  - name: write_stdout

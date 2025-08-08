@@ -1179,6 +1179,11 @@ impl OxiData {
         self.schema.validate_data(&self.data)
     }
 
+    /// Get estimated memory usage for processing limits
+    pub fn estimated_memory_usage(&self) -> usize {
+        self.data.estimated_memory_usage()
+    }
+
     /// Extract just the data (for backward compatibility)
     pub fn into_data(self) -> Data {
         self.data
