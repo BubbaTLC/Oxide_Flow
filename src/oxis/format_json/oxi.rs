@@ -1,5 +1,4 @@
 use crate::oxis::prelude::*;
-use crate::types::OxiDataWithSchema;
 use async_trait::async_trait;
 
 /// FormatJson formats structured data as JSON
@@ -29,42 +28,39 @@ impl Oxi for FormatJson {
         .unwrap()
     }
 
-    async fn process(
-        &self,
-        data_with_schema: OxiDataWithSchema,
-        config: &OxiConfig,
-    ) -> anyhow::Result<OxiDataWithSchema> {
-        // Validate input data if schema is present
-        if let Some(schema) = &data_with_schema.schema {
-            schema
-                .validate_data(&data_with_schema.data)
-                .map_err(anyhow::Error::from)?;
-        }
-
-        // Process the actual data
-        let output_data = self.process_data(data_with_schema.data, config).await?;
-
-        // Calculate output schema
-        let output_schema = self.output_schema(data_with_schema.schema.as_ref(), config)?;
-
-        Ok(OxiDataWithSchema::new(output_data, output_schema))
+    fn schema_strategy(&self) -> SchemaStrategy {
+        SchemaStrategy::Passthrough
     }
 
-    async fn process_data(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    async fn process(&self, input: OxiData, config: &OxiConfig) -> Result<OxiData, OxiError> {
         // Get JSON data from input
-        let json_value = input.as_json()?;
+        let json_value = input
+            .data()
+            .as_json()
+            .map_err(|_e| OxiError::TypeMismatch {
+                expected: "JSON".to_string(),
+                actual: input.data().data_type().to_string(),
+                step: "format_json".to_string(),
+            })?;
 
         // Get configuration
         let pretty = config.get_bool_or("pretty", false);
 
         // Format as JSON string
         let json_string = if pretty {
-            serde_json::to_string_pretty(json_value)?
+            serde_json::to_string_pretty(json_value)
         } else {
-            serde_json::to_string(json_value)?
-        };
+            serde_json::to_string(json_value)
+        }
+        .map_err(|e| OxiError::ValidationError {
+            details: format!("Failed to serialize JSON: {e}"),
+        })?;
 
-        Ok(OxiData::Text(json_string))
+        // Return as text data with original schema (passthrough strategy)
+        Ok(OxiData::with_schema(
+            Data::Text(json_string),
+            input.schema.clone(),
+        ))
     }
 }
 
@@ -83,11 +79,11 @@ mod tests {
             "value": 123
         });
 
-        let input = OxiDataWithSchema::from_data(OxiData::Json(json_value));
+        let input = OxiData::from_json(json_value);
 
         let result = oxi.process(input, &config).await.unwrap();
 
-        if let OxiData::Text(text) = result.data {
+        if let Data::Text(text) = &result.data {
             assert!(text.contains("\"name\":\"test\""));
             assert!(text.contains("\"value\":123"));
         } else {

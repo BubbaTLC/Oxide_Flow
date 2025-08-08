@@ -6,7 +6,7 @@ use crate::oxis::format_json::oxi::FormatJson;
 use crate::oxis::parse_json::oxi::ParseJson;
 use crate::oxis::read_stdin::ReadStdIn;
 use crate::oxis::write_stdout::WriteStdOut;
-use crate::types::{OxiData, OxiDataWithSchema};
+use crate::types::OxiData;
 use crate::Oxi;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -189,22 +189,18 @@ impl Pipeline {
         if success {
             println!("\n🎉 Pipeline completed successfully!");
         } else {
-            println!(
-                "\n⚠️  Pipeline completed with {} failed steps",
-                steps_failed
-            );
+            println!("\n⚠️  Pipeline completed with {steps_failed} failed steps");
         }
 
         println!(
-            "📊 Summary: {} executed, {} failed, {} skipped",
-            steps_executed, steps_failed, steps_skipped
+            "📊 Summary: {steps_executed} executed, {steps_failed} failed, {steps_skipped} skipped"
         );
-        println!("⏱️  Total time: {}ms", total_duration);
+        println!("⏱️  Total time: {total_duration}ms");
 
         PipelineResult {
             success,
-            steps_executed: steps_executed as u32,
-            steps_failed: steps_failed as u32,
+            steps_executed: steps_executed,
+            steps_failed: steps_failed,
             steps_skipped: steps_skipped as u32,
             total_duration_ms: total_duration,
             step_results,
@@ -269,7 +265,7 @@ impl PipelineStep {
             match result {
                 Ok(data) => {
                     let duration = start_time.elapsed().as_millis() as u64;
-                    println!("✅ Step '{}' completed successfully", step_id);
+                    println!("✅ Step '{step_id}' completed successfully");
                     return StepResult {
                         step_id,
                         success: true,
@@ -321,48 +317,44 @@ impl PipelineStep {
     ) -> anyhow::Result<OxiData> {
         let config = self.to_oxi_config(resolver)?;
 
-        // Convert input to schema-aware format
-        let input_with_schema = OxiDataWithSchema::from_data(input);
-
         // Import and execute the specific Oxi
-        let result_with_schema = match self.name.as_str() {
+        let result = match self.name.as_str() {
             "read_file" => {
                 let oxi = ReadFile;
-                oxi.process(input_with_schema, &config).await
+                oxi.process(input, &config).await
             }
             "write_file" => {
                 let oxi = WriteFile;
-                oxi.process(input_with_schema, &config).await
+                oxi.process(input, &config).await
             }
             "parse_json" => {
                 let oxi = ParseJson;
-                oxi.process(input_with_schema, &config).await
+                oxi.process(input, &config).await
             }
             "format_json" => {
                 let oxi = FormatJson;
-                oxi.process(input_with_schema, &config).await
+                oxi.process(input, &config).await
             }
             "format_csv" => {
                 let oxi = FormatCsv;
-                oxi.process(input_with_schema, &config).await
+                oxi.process(input, &config).await
             }
             "read_stdin" => {
                 let oxi = ReadStdIn;
-                oxi.process(input_with_schema, &config).await
+                oxi.process(input, &config).await
             }
             "write_stdout" => {
                 let oxi = WriteStdOut;
-                oxi.process(input_with_schema, &config).await
+                oxi.process(input, &config).await
             }
             "flatten" => {
                 let oxi = Flatten;
-                oxi.process(input_with_schema, &config).await
+                oxi.process(input, &config).await
             }
-            _ => Err(anyhow::anyhow!("Unknown Oxi: {}", self.name)),
+            _ => Err(crate::error::OxiError::UnknownOxi(self.name.clone())),
         }?;
 
-        // Extract data from result
-        Ok(result_with_schema.into_data())
+        Ok(result)
     }
 
     /// Convert config HashMap to OxiConfig without resolution

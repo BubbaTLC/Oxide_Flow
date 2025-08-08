@@ -30,18 +30,29 @@ impl Oxi for ReadFile {
         .unwrap()
     }
 
-    async fn process_data(&self, _input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    fn schema_strategy(&self) -> SchemaStrategy {
+        SchemaStrategy::Infer
+    }
+
+    async fn process(&self, _input: OxiData, config: &OxiConfig) -> Result<OxiData, OxiError> {
         // Get file path from config
-        let path = config.get_string("path")?;
+        let path = config
+            .get_string("path")
+            .map_err(|e| OxiError::ValidationError {
+                details: format!("Missing required 'path' config: {e}"),
+            })?;
 
         // Check if file exists
         if !Path::new(&path).exists() {
-            anyhow::bail!("File not found: {}", path);
+            return Err(OxiError::ValidationError {
+                details: format!("File not found: {path}"),
+            });
         }
 
         // Read file content
-        let content = fs::read_to_string(&path)
-            .map_err(|e| anyhow::anyhow!("Failed to read file '{}': {}", path, e))?;
+        let content = fs::read_to_string(&path).map_err(|e| OxiError::ValidationError {
+            details: format!("Failed to read file '{path}': {e}"),
+        })?;
 
         // Create JSON output with content and metadata
         let result = serde_json::json!({
@@ -53,7 +64,7 @@ impl Oxi for ReadFile {
             }
         });
 
-        Ok(OxiData::Json(result))
+        Ok(OxiData::from_json(result))
     }
 }
 
@@ -88,34 +99,49 @@ impl Oxi for WriteFile {
         .unwrap()
     }
 
-    async fn process_data(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    fn schema_strategy(&self) -> SchemaStrategy {
+        SchemaStrategy::Passthrough
+    }
+
+    async fn process(&self, input: OxiData, config: &OxiConfig) -> Result<OxiData, OxiError> {
         // Get file path from config
-        let path = config.get_string("path")?;
+        let path = config
+            .get_string("path")
+            .map_err(|e| OxiError::ValidationError {
+                details: format!("Missing required 'path' config: {e}"),
+            })?;
         let create_dirs = config.get_bool_or("create_dirs", true);
         let append = config.get_bool_or("append", false);
 
         // Create parent directories if needed
         if create_dirs {
             if let Some(parent) = Path::new(&path).parent() {
-                fs::create_dir_all(parent).map_err(|e| {
-                    anyhow::anyhow!("Failed to create directories for '{}': {}", path, e)
+                fs::create_dir_all(parent).map_err(|e| OxiError::ValidationError {
+                    details: format!("Failed to create directories for '{path}': {e}"),
                 })?;
             }
         }
 
         // Convert input to text
-        let content = input.to_text()?;
+        let content = input
+            .data()
+            .to_text()
+            .map_err(|e| OxiError::ValidationError {
+                details: format!("Failed to convert input to text: {e}"),
+            })?;
 
         // Write to file
         if append {
-            fs::write(&path, content)
-                .map_err(|e| anyhow::anyhow!("Failed to append to file '{}': {}", path, e))?;
+            fs::write(&path, content).map_err(|e| OxiError::ValidationError {
+                details: format!("Failed to append to file '{path}': {e}"),
+            })?;
         } else {
-            fs::write(&path, content)
-                .map_err(|e| anyhow::anyhow!("Failed to write to file '{}': {}", path, e))?;
+            fs::write(&path, content).map_err(|e| OxiError::ValidationError {
+                details: format!("Failed to write to file '{path}': {e}"),
+            })?;
         }
 
-        // Return the input unchanged for potential chaining
+        // Return the input unchanged for potential chaining (passthrough schema strategy)
         Ok(input)
     }
 }
@@ -123,7 +149,7 @@ impl Oxi for WriteFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::OxiDataWithSchema;
+    use crate::types::OxiData;
     use std::fs;
     use tempfile::tempdir;
 
@@ -144,10 +170,7 @@ mod tests {
             serde_yaml::Value::String(file_path.to_string_lossy().to_string()),
         );
 
-        let result = oxi
-            .process(OxiDataWithSchema::from_data(OxiData::Empty), &config)
-            .await
-            .unwrap();
+        let result = oxi.process(OxiData::empty(), &config).await.unwrap();
 
         // ReadFile returns JSON with content and metadata
         let json_result = result.data.as_json().unwrap();
@@ -168,7 +191,7 @@ mod tests {
             serde_yaml::Value::String(file_path.to_string_lossy().to_string()),
         );
 
-        let input = OxiDataWithSchema::from_data(OxiData::Text(content.to_string()));
+        let input = OxiData::from_text(content.to_string());
         let result = oxi.process(input, &config).await.unwrap();
 
         // Verify file was written

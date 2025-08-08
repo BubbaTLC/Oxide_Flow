@@ -3,10 +3,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
-/// OxiData represents the data flowing between Oxis in the pipeline.
+/// Schema strategies that Oxis use to handle schema evolution
+#[derive(Debug, Clone)]
+pub enum SchemaStrategy {
+    /// Schema passes through unchanged (filters, validators)
+    Passthrough,
+    /// Schema is modified (field renames, additions, deletions)
+    Modify { description: String },
+    /// Schema is inferred from data (when transformation is data-dependent)
+    Infer,
+}
+
+/// Data represents the actual data payload flowing between Oxis in the pipeline.
 /// Uses JSON as the primary internal data format for structured data exchange.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum OxiData {
+pub enum Data {
     /// JSON data - the primary format for structured data exchange between Oxis
     Json(serde_json::Value),
 
@@ -20,36 +31,36 @@ pub enum OxiData {
     Empty,
 }
 
-impl OxiData {
-    /// Create a new empty OxiData
+impl Data {
+    /// Create a new empty Data
     pub fn empty() -> Self {
-        OxiData::Empty
+        Data::Empty
     }
 
-    /// Create a new OxiData from text
+    /// Create a new Data from text
     pub fn from_text(text: &str) -> Self {
-        OxiData::Text(text.to_string())
+        Data::Text(text.to_string())
     }
 
-    /// Create a new OxiData from JSON data
+    /// Create a new Data from JSON data
     pub fn from_json(data: serde_json::Value) -> Self {
-        OxiData::Json(data)
+        Data::Json(data)
     }
 
-    /// Create a new OxiData from binary data
+    /// Create a new Data from binary data
     pub fn from_binary(data: Vec<u8>) -> Self {
-        OxiData::Binary(data)
+        Data::Binary(data)
     }
 
     /// Check if this is empty data
     pub fn is_empty(&self) -> bool {
-        matches!(self, OxiData::Empty)
+        matches!(self, Data::Empty)
     }
 
     /// Get text data or return an error
     pub fn as_text(&self) -> anyhow::Result<&str> {
         match self {
-            OxiData::Text(text) => Ok(text),
+            Data::Text(text) => Ok(text),
             _ => anyhow::bail!("Expected text data, found {:?}", self.data_type()),
         }
     }
@@ -57,7 +68,7 @@ impl OxiData {
     /// Get JSON data or return an error
     pub fn as_json(&self) -> anyhow::Result<&serde_json::Value> {
         match self {
-            OxiData::Json(json) => Ok(json),
+            Data::Json(json) => Ok(json),
             _ => anyhow::bail!("Expected JSON data, found {:?}", self.data_type()),
         }
     }
@@ -65,7 +76,7 @@ impl OxiData {
     /// Get binary data or return an error
     pub fn as_binary(&self) -> anyhow::Result<&Vec<u8>> {
         match self {
-            OxiData::Binary(binary) => Ok(binary),
+            Data::Binary(binary) => Ok(binary),
             _ => anyhow::bail!("Expected binary data, found {:?}", self.data_type()),
         }
     }
@@ -73,53 +84,53 @@ impl OxiData {
     /// Get the type of data for error messages
     pub fn data_type(&self) -> &'static str {
         match self {
-            OxiData::Json(_) => "JSON",
-            OxiData::Text(_) => "Text",
-            OxiData::Binary(_) => "Binary",
-            OxiData::Empty => "Empty",
+            Data::Json(_) => "JSON",
+            Data::Text(_) => "Text",
+            Data::Binary(_) => "Binary",
+            Data::Empty => "Empty",
         }
     }
 
     /// Convert to text representation
     pub fn to_text(&self) -> anyhow::Result<String> {
         match self {
-            OxiData::Text(text) => Ok(text.clone()),
-            OxiData::Json(json) => Ok(serde_json::to_string_pretty(json)?),
-            OxiData::Binary(data) => {
+            Data::Text(text) => Ok(text.clone()),
+            Data::Json(json) => Ok(serde_json::to_string_pretty(json)?),
+            Data::Binary(data) => {
                 // Convert binary to base64 string for text representation
                 use base64::Engine;
                 Ok(base64::engine::general_purpose::STANDARD.encode(data))
             }
-            OxiData::Empty => Ok(String::new()),
+            Data::Empty => Ok(String::new()),
         }
     }
 
     /// Convert to binary representation
     pub fn to_binary(&self) -> anyhow::Result<Vec<u8>> {
         match self {
-            OxiData::Text(text) => Ok(text.as_bytes().to_vec()),
-            OxiData::Json(json) => Ok(serde_json::to_string(json)?.as_bytes().to_vec()),
-            OxiData::Binary(data) => Ok(data.clone()),
-            OxiData::Empty => Ok(Vec::new()),
+            Data::Text(text) => Ok(text.as_bytes().to_vec()),
+            Data::Json(json) => Ok(serde_json::to_string(json)?.as_bytes().to_vec()),
+            Data::Binary(data) => Ok(data.clone()),
+            Data::Empty => Ok(Vec::new()),
         }
     }
 
     /// Convert to JSON with fallback parsing
     pub fn to_json(&self) -> anyhow::Result<serde_json::Value> {
         match self {
-            OxiData::Json(data) => Ok(data.clone()),
-            OxiData::Text(text) => serde_json::from_str(text)
+            Data::Json(data) => Ok(data.clone()),
+            Data::Text(text) => serde_json::from_str(text)
                 .map_err(|e| anyhow::anyhow!("Failed to parse text as JSON: {}", e)),
-            OxiData::Binary(_) => Err(anyhow::anyhow!("Cannot convert binary data to JSON")),
-            OxiData::Empty => Ok(serde_json::Value::Null),
+            Data::Binary(_) => Err(anyhow::anyhow!("Cannot convert binary data to JSON")),
+            Data::Empty => Ok(serde_json::Value::Null),
         }
     }
 
     /// Enhanced array handling for CSV formatting and batch processing
     pub fn as_array(&self) -> anyhow::Result<Vec<serde_json::Value>> {
         match self {
-            OxiData::Json(serde_json::Value::Array(arr)) => Ok(arr.clone()),
-            OxiData::Json(single_obj) => Ok(vec![single_obj.clone()]),
+            Data::Json(serde_json::Value::Array(arr)) => Ok(arr.clone()),
+            Data::Json(single_obj) => Ok(vec![single_obj.clone()]),
             _ => Err(anyhow::anyhow!("Cannot convert to array")),
         }
     }
@@ -127,7 +138,7 @@ impl OxiData {
     /// Check if data represents a batch (array with multiple items)
     pub fn is_batch(&self) -> bool {
         match self {
-            OxiData::Json(serde_json::Value::Array(arr)) => arr.len() > 1,
+            Data::Json(serde_json::Value::Array(arr)) => arr.len() > 1,
             _ => false,
         }
     }
@@ -135,7 +146,7 @@ impl OxiData {
     /// Get the batch size (number of items in array)
     pub fn batch_size(&self) -> usize {
         match self {
-            OxiData::Json(serde_json::Value::Array(arr)) => arr.len(),
+            Data::Json(serde_json::Value::Array(arr)) => arr.len(),
             _ => 1, // Single items have batch size of 1
         }
     }
@@ -143,43 +154,43 @@ impl OxiData {
     /// Get estimated memory usage for processing limits
     pub fn estimated_memory_usage(&self) -> usize {
         match self {
-            OxiData::Json(value) => {
+            Data::Json(value) => {
                 // Rough estimate: JSON string length * 2 for overhead
                 value.to_string().len() * 2
             }
-            OxiData::Text(text) => text.len(),
-            OxiData::Binary(bytes) => bytes.len(),
-            OxiData::Empty => 0,
+            Data::Text(text) => text.len(),
+            Data::Binary(bytes) => bytes.len(),
+            Data::Empty => 0,
         }
     }
 
     /// Get the OxiDataType for this data
     pub fn get_data_type(&self) -> OxiDataType {
         match self {
-            OxiData::Json(_) => OxiDataType::Json,
-            OxiData::Text(_) => OxiDataType::Text,
-            OxiData::Binary(_) => OxiDataType::Binary,
-            OxiData::Empty => OxiDataType::Empty,
+            Data::Json(_) => OxiDataType::Json,
+            Data::Text(_) => OxiDataType::Text,
+            Data::Binary(_) => OxiDataType::Binary,
+            Data::Empty => OxiDataType::Empty,
         }
     }
 }
 
-impl fmt::Display for OxiData {
+impl fmt::Display for Data {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            OxiData::Text(text) => write!(f, "{text}"),
-            OxiData::Json(data) => match serde_json::to_string_pretty(&data) {
+            Data::Text(text) => write!(f, "{text}"),
+            Data::Json(data) => match serde_json::to_string_pretty(&data) {
                 Ok(json) => write!(f, "{json}"),
                 Err(_) => write!(f, "<Invalid JSON data>"),
             },
-            OxiData::Binary(data) => {
+            Data::Binary(data) => {
                 if data.len() > 100 {
                     write!(f, "<Binary data: {} bytes>", data.len())
                 } else {
                     write!(f, "<Binary data: {data:?}>")
                 }
             }
-            OxiData::Empty => write!(f, "<Empty>"),
+            Data::Empty => write!(f, "<Empty>"),
         }
     }
 }
@@ -230,18 +241,10 @@ impl Default for ProcessingLimits {
 }
 
 /// Configuration for an Oxi
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OxiConfig {
     /// Key-value pairs for configuration
     pub values: HashMap<String, serde_yaml::Value>,
-}
-
-impl Default for OxiConfig {
-    fn default() -> Self {
-        OxiConfig {
-            values: HashMap::new(),
-        }
-    }
 }
 
 impl OxiConfig {
@@ -642,11 +645,131 @@ impl OxiSchema {
         self.fields.insert(name, field);
     }
 
-    /// Validate data against this schema
-    pub fn validate_data(&self, data: &OxiData) -> Result<(), crate::error::OxiError> {
+    /// Infer schema from data
+    pub fn infer_from_data(data: &Data) -> Result<Self, crate::error::OxiError> {
+        let mut schema = Self::empty();
+        schema.metadata.created_by = "oxide_flow_schema_inference".to_string();
+
         match data {
-            OxiData::Json(json_value) => self.validate_json_value(json_value, "root"),
-            OxiData::Text(_) => {
+            Data::Json(json_value) => {
+                schema.infer_from_json_value(json_value, "root")?;
+            }
+            Data::Text(_) => {
+                // Text data gets a simple "value" field schema
+                schema.add_field(
+                    "value".to_string(),
+                    FieldSchema {
+                        field_type: FieldType::String,
+                        nullable: false,
+                        max_size: None,
+                        constraints: vec![],
+                        description: Some("Text content".to_string()),
+                        examples: vec![],
+                    },
+                );
+            }
+            Data::Binary(_) => {
+                // Binary data gets a simple "data" field schema
+                schema.add_field(
+                    "data".to_string(),
+                    FieldSchema {
+                        field_type: FieldType::Binary,
+                        nullable: false,
+                        max_size: None,
+                        constraints: vec![],
+                        description: Some("Binary content".to_string()),
+                        examples: vec![],
+                    },
+                );
+            }
+            Data::Empty => {
+                // Empty data has no fields
+            }
+        }
+
+        Ok(schema)
+    }
+
+    fn infer_from_json_value(
+        &mut self,
+        value: &serde_json::Value,
+        _path: &str,
+    ) -> Result<(), crate::error::OxiError> {
+        match value {
+            serde_json::Value::Object(obj) => {
+                for (key, val) in obj {
+                    let field_type = match val {
+                        serde_json::Value::String(_) => FieldType::String,
+                        serde_json::Value::Number(n) => {
+                            if n.is_i64() {
+                                FieldType::Integer
+                            } else {
+                                FieldType::Float
+                            }
+                        }
+                        serde_json::Value::Bool(_) => FieldType::Boolean,
+                        serde_json::Value::Array(_) => {
+                            FieldType::Array(Box::new(FieldType::Unknown))
+                        }
+                        serde_json::Value::Object(_) => FieldType::Object(HashMap::new()),
+                        serde_json::Value::Null => FieldType::String, // Default for null
+                    };
+
+                    self.add_field(
+                        key.clone(),
+                        FieldSchema {
+                            field_type,
+                            nullable: val.is_null(),
+                            max_size: None,
+                            constraints: vec![],
+                            description: None,
+                            examples: vec![val.clone()],
+                        },
+                    );
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                // For arrays, merge schemas from sample elements
+                if let Some(first_element) = arr.first() {
+                    self.infer_from_json_value(first_element, "array_element")?;
+                }
+            }
+            _ => {
+                // Single value gets a "value" field
+                let field_type = match value {
+                    serde_json::Value::String(_) => FieldType::String,
+                    serde_json::Value::Number(n) => {
+                        if n.is_i64() {
+                            FieldType::Integer
+                        } else {
+                            FieldType::Float
+                        }
+                    }
+                    serde_json::Value::Bool(_) => FieldType::Boolean,
+                    _ => FieldType::String,
+                };
+
+                self.add_field(
+                    "value".to_string(),
+                    FieldSchema {
+                        field_type,
+                        nullable: value.is_null(),
+                        max_size: None,
+                        constraints: vec![],
+                        description: Some("Inferred value field".to_string()),
+                        examples: vec![value.clone()],
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate data against this schema
+    pub fn validate_data(&self, data: &Data) -> Result<(), crate::error::OxiError> {
+        match data {
+            Data::Json(json_value) => self.validate_json_value(json_value, "root"),
+            Data::Text(_) => {
                 // For text data, check if schema expects text-compatible fields
                 if self.fields.len() == 1 && self.fields.contains_key("value") {
                     Ok(())
@@ -657,7 +780,7 @@ impl OxiSchema {
                     })
                 }
             }
-            OxiData::Binary(_) => {
+            Data::Binary(_) => {
                 // For binary data, similar check
                 if self.fields.len() == 1 && self.fields.contains_key("data") {
                     Ok(())
@@ -668,7 +791,7 @@ impl OxiSchema {
                     })
                 }
             }
-            OxiData::Empty => Ok(()), // Empty data always validates
+            Data::Empty => Ok(()), // Empty data always validates
         }
     }
 
@@ -684,7 +807,7 @@ impl OxiSchema {
                     let field_path = if path == "root" {
                         field_name.clone()
                     } else {
-                        format!("{}.{}", path, field_name)
+                        format!("{path}.{field_name}")
                     };
 
                     match obj.get(field_name) {
@@ -694,7 +817,7 @@ impl OxiSchema {
                         None => {
                             if !field_schema.nullable {
                                 return Err(crate::error::OxiError::ValidationError {
-                                    details: format!("Required field '{}' is missing", field_path),
+                                    details: format!("Required field '{field_path}' is missing"),
                                 });
                             }
                         }
@@ -705,7 +828,7 @@ impl OxiSchema {
             serde_json::Value::Array(arr) => {
                 // For arrays, validate each element
                 for (i, item) in arr.iter().enumerate() {
-                    let item_path = format!("{}[{}]", path, i);
+                    let item_path = format!("{path}[{i}]");
                     self.validate_json_value(item, &item_path)?;
                 }
                 Ok(())
@@ -713,12 +836,11 @@ impl OxiSchema {
             _ => {
                 // Single value - check if schema has a "value" field
                 if let Some(value_field) = self.fields.get("value") {
-                    value_field.validate_value(value, &format!("{}.value", path))
+                    value_field.validate_value(value, &format!("{path}.value"))
                 } else {
                     Err(crate::error::OxiError::ValidationError {
                         details: format!(
-                            "Schema expects object structure, got single value at {}",
-                            path
+                            "Schema expects object structure, got single value at {path}"
                         ),
                     })
                 }
@@ -772,7 +894,7 @@ impl FieldSchema {
         if value.is_null() {
             if !self.nullable {
                 return Err(crate::error::OxiError::ValidationError {
-                    details: format!("Field '{}' cannot be null", path),
+                    details: format!("Field '{path}' cannot be null"),
                 });
             }
             return Ok(());
@@ -841,7 +963,7 @@ impl FieldType {
         match self {
             FieldType::String => value.is_string(),
             FieldType::Integer => {
-                value.is_number() && value.as_f64().map_or(false, |f| f.fract() == 0.0)
+                value.is_number() && value.as_f64().is_some_and(|f| f.fract() == 0.0)
             }
             FieldType::Float => value.is_number(),
             FieldType::Boolean => value.is_boolean(),
@@ -850,7 +972,7 @@ impl FieldType {
                 value.is_string()
                     && value
                         .as_str()
-                        .map_or(false, |s| chrono::DateTime::parse_from_rfc3339(s).is_ok())
+                        .is_some_and(|s| chrono::DateTime::parse_from_rfc3339(s).is_ok())
             }
             FieldType::Binary => {
                 // For JSON, binary data is typically base64 encoded strings
@@ -895,8 +1017,7 @@ impl FieldConstraint {
                     if num < *min {
                         return Err(crate::error::OxiError::ValidationError {
                             details: format!(
-                                "Field '{}' value {} is less than minimum {}",
-                                path, num, min
+                                "Field '{path}' value {num} is less than minimum {min}"
                             ),
                         });
                     }
@@ -908,8 +1029,7 @@ impl FieldConstraint {
                     if num > *max {
                         return Err(crate::error::OxiError::ValidationError {
                             details: format!(
-                                "Field '{}' value {} is greater than maximum {}",
-                                path, num, max
+                                "Field '{path}' value {num} is greater than maximum {max}"
                             ),
                         });
                     }
@@ -953,8 +1073,7 @@ impl FieldConstraint {
                     if !s.contains(pattern) {
                         return Err(crate::error::OxiError::ValidationError {
                             details: format!(
-                                "Field '{}' value '{}' does not match pattern '{}'",
-                                path, s, pattern
+                                "Field '{path}' value '{s}' does not match pattern '{pattern}'"
                             ),
                         });
                     }
@@ -964,10 +1083,7 @@ impl FieldConstraint {
             FieldConstraint::OneOf(allowed_values) => {
                 if !allowed_values.contains(value) {
                     return Err(crate::error::OxiError::ValidationError {
-                        details: format!(
-                            "Field '{}' value must be one of {:?}",
-                            path, allowed_values
-                        ),
+                        details: format!("Field '{path}' value must be one of {allowed_values:?}"),
                     });
                 }
                 Ok(())
@@ -1000,47 +1116,77 @@ impl Default for SchemaMetadata {
     }
 }
 
-/// Data container that carries schema alongside data
+/// OxiData represents unified schema-aware data flowing between Oxis in the pipeline.
+/// Every piece of data includes both the payload and its schema information.
 #[derive(Debug, Clone)]
-pub struct OxiDataWithSchema {
-    /// The actual data
-    pub data: OxiData,
-    /// Optional schema describing the data structure
-    pub schema: Option<OxiSchema>,
+pub struct OxiData {
+    /// The actual data payload
+    pub data: Data,
+    /// Schema information (always present, may be inferred or empty)
+    pub schema: OxiSchema,
 }
 
-impl OxiDataWithSchema {
-    /// Create data with schema
-    pub fn new(data: OxiData, schema: OxiSchema) -> Self {
-        Self {
-            data,
-            schema: Some(schema),
-        }
+impl OxiData {
+    /// Create new OxiData with inferred schema
+    pub fn new(data: Data) -> Self {
+        let schema = OxiSchema::infer_from_data(&data).unwrap_or_default();
+        Self { data, schema }
     }
 
-    /// Create from plain OxiData (schema will be inferred when needed)
-    pub fn from_data(data: OxiData) -> Self {
-        Self { data, schema: None }
+    /// Create OxiData with explicit schema
+    pub fn with_schema(data: Data, schema: OxiSchema) -> Self {
+        Self { data, schema }
     }
 
-    /// Extract just the data
-    pub fn into_data(self) -> OxiData {
-        self.data
+    /// Create empty OxiData
+    pub fn empty() -> Self {
+        Self::new(Data::Empty)
     }
 
-    /// Get a reference to the data
-    pub fn data(&self) -> &OxiData {
+    /// Create from JSON with schema inference
+    pub fn from_json(value: serde_json::Value) -> Self {
+        Self::new(Data::Json(value))
+    }
+
+    /// Create from text with schema inference
+    pub fn from_text(text: String) -> Self {
+        Self::new(Data::Text(text))
+    }
+
+    /// Create from binary data
+    pub fn from_binary(data: Vec<u8>) -> Self {
+        Self::new(Data::Binary(data))
+    }
+
+    /// Convenience method to access the data
+    pub fn data(&self) -> &Data {
         &self.data
     }
 
-    /// Get a reference to the schema
-    pub fn schema(&self) -> Option<&OxiSchema> {
-        self.schema.as_ref()
+    /// Convenience method to access the schema
+    pub fn schema(&self) -> &OxiSchema {
+        &self.schema
+    }
+
+    /// Update the schema while keeping the same data
+    pub fn with_updated_schema(mut self, new_schema: OxiSchema) -> Self {
+        self.schema = new_schema;
+        self
+    }
+
+    /// Validate the data against its schema
+    pub fn validate(&self) -> Result<(), crate::error::OxiError> {
+        self.schema.validate_data(&self.data)
+    }
+
+    /// Extract just the data (for backward compatibility)
+    pub fn into_data(self) -> Data {
+        self.data
     }
 }
 
-impl From<OxiData> for OxiDataWithSchema {
-    fn from(data: OxiData) -> Self {
-        Self::from_data(data)
+impl From<Data> for OxiData {
+    fn from(data: Data) -> Self {
+        Self::new(data)
     }
 }

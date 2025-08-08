@@ -134,7 +134,7 @@ impl ProjectConfig {
         } else {
             println!("📂 Available pipelines in {}:", pipeline_dir.display());
             for pipeline in &pipelines {
-                println!("  • {}", pipeline);
+                println!("  • {pipeline}");
             }
         }
 

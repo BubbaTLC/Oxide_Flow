@@ -35,29 +35,42 @@ impl Oxi for ReadStdIn {
 
     fn validate_input(&self, input: &OxiData) -> Result<(), OxiError> {
         // read_stdin typically starts the pipeline, so should accept empty input
-        match input {
-            OxiData::Empty => Ok(()),
+        match &input.data {
+            Data::Empty => Ok(()),
             _ => Err(OxiError::TypeMismatch {
                 expected: "Empty (stdin reader starts pipeline)".to_string(),
-                actual: input.data_type().to_string(),
+                actual: input.data().data_type().to_string(),
                 step: self.name().to_string(),
             }),
         }
     }
 
-    async fn process_data(&self, _data: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    fn schema_strategy(&self) -> SchemaStrategy {
+        SchemaStrategy::Infer
+    }
+
+    async fn process(&self, _input: OxiData, config: &OxiConfig) -> Result<OxiData, OxiError> {
         use tokio::io::{self, AsyncReadExt};
 
         let is_binary = config.get_bool_or("binary", false);
 
         if is_binary {
             let mut buffer = Vec::new();
-            io::stdin().read_to_end(&mut buffer).await?;
-            Ok(OxiData::Binary(buffer))
+            io::stdin()
+                .read_to_end(&mut buffer)
+                .await
+                .map_err(|e| OxiError::ValidationError {
+                    details: format!("Failed to read from stdin: {e}"),
+                })?;
+            Ok(OxiData::from_binary(buffer))
         } else {
             let mut buffer = String::new();
-            io::stdin().read_to_string(&mut buffer).await?;
-            Ok(OxiData::Text(buffer))
+            io::stdin().read_to_string(&mut buffer).await.map_err(|e| {
+                OxiError::ValidationError {
+                    details: format!("Failed to read from stdin: {e}"),
+                }
+            })?;
+            Ok(OxiData::from_text(buffer))
         }
     }
 }

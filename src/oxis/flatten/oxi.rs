@@ -1,5 +1,4 @@
 use crate::oxis::prelude::*;
-use crate::types::OxiDataWithSchema;
 use async_trait::async_trait;
 
 /// Flatten transforms nested structured data into a flattened format
@@ -27,50 +26,51 @@ impl Oxi for Flatten {
         "#).unwrap()
     }
 
-    async fn process(
-        &self,
-        data_with_schema: OxiDataWithSchema,
-        config: &OxiConfig,
-    ) -> anyhow::Result<OxiDataWithSchema> {
-        // Validate input data if schema is present
-        if let Some(schema) = &data_with_schema.schema {
-            schema
-                .validate_data(&data_with_schema.data)
-                .map_err(anyhow::Error::from)?;
+    fn schema_strategy(&self) -> SchemaStrategy {
+        SchemaStrategy::Modify {
+            description: "Flattens nested objects using dot notation, transforms nested schema to flat fields".to_string()
         }
-
-        // Process the actual data
-        let output_data = self.process_data(data_with_schema.data, config).await?;
-
-        // Calculate output schema
-        let output_schema = self.output_schema(data_with_schema.schema.as_ref(), config)?;
-
-        Ok(OxiDataWithSchema::new(output_data, output_schema))
     }
 
-    async fn process_data(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    async fn process(&self, input: OxiData, config: &OxiConfig) -> Result<OxiData, OxiError> {
         // Get configuration
         let delimiter = config.get_string_or("delimiter", "_");
         let array_mode = config.get_string_or("array_mode", "explode");
 
         // Get JSON data from input
-        let value = input.as_json()?;
+        let value = input
+            .data()
+            .as_json()
+            .map_err(|_e| OxiError::TypeMismatch {
+                expected: "JSON".to_string(),
+                actual: input.data().data_type().to_string(),
+                step: "flatten".to_string(),
+            })?;
 
         // Flatten the structure
         let flattened_result = if let serde_json::Value::Array(array) = &value {
             // Process array of objects
             let mut flattened_objects = Vec::new();
             for item in array {
-                let flattened = flatten_json_value(item, &delimiter, &array_mode)?;
+                let flattened = flatten_json_value(item, &delimiter, &array_mode).map_err(|e| {
+                    OxiError::ValidationError {
+                        details: format!("Failed to flatten array item: {e}"),
+                    }
+                })?;
                 flattened_objects.push(flattened);
             }
             serde_json::Value::Array(flattened_objects)
         } else {
             // Process single object
-            flatten_json_value(value, &delimiter, &array_mode)?
+            flatten_json_value(value, &delimiter, &array_mode).map_err(|e| {
+                OxiError::ValidationError {
+                    details: format!("Failed to flatten object: {e}"),
+                }
+            })?
         };
 
-        Ok(OxiData::Json(flattened_result))
+        // Return flattened data with inferred schema (modify strategy)
+        Ok(OxiData::from_json(flattened_result))
     }
 }
 
@@ -156,15 +156,12 @@ mod tests {
             }
         });
 
-        let input = OxiData::Json(json_data);
+        let input = OxiData::from_json(json_data);
         let config = OxiConfig::default();
 
-        let result = oxi
-            .process(OxiDataWithSchema::from_data(input), &config)
-            .await
-            .unwrap();
+        let result = oxi.process(input, &config).await.unwrap();
 
-        if let OxiData::Json(json_result) = result.data {
+        if let Data::Json(json_result) = &result.data {
             if let serde_json::Value::Object(obj) = json_result {
                 assert!(obj.contains_key("name"));
                 assert!(obj.contains_key("address_street"));

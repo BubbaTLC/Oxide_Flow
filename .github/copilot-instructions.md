@@ -1,5 +1,7 @@
 # Oxide Flow - AI Agent Instructions
 
+Always use a TODO list (`chat.todoListTool.enabled`)
+
 ## Project Overview
 Oxide Flow is a command-line data transformation and integration tool built in Rust with a modular, plugin-based architecture. The project follows Unix philosophy - simple, composable tools that work together through data pipes.
 

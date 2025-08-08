@@ -1,7 +1,7 @@
 // Core Oxi SDK prelude - everything an Oxi needs to implement
 pub use super::*;
 pub use crate::error::OxiError;
-pub use crate::types::{OxiConfig, OxiData};
+pub use crate::types::{Data, OxiConfig, OxiData, SchemaStrategy};
 pub use crate::Oxi;
 pub use anyhow::Result;
 pub use async_trait::async_trait;

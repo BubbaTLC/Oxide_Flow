@@ -1,4 +1,4 @@
-use crate::types::OxiData;
+use crate::types::{Data, OxiData};
 use regex::Regex;
 use std::collections::HashMap;
 use std::env;
@@ -125,7 +125,7 @@ impl ConfigResolver {
                 self.extract_field_from_output(step_output, path)?
             } else {
                 // If no field path, convert the entire output to string
-                step_output.to_text()?
+                step_output.data.to_text()?
             };
 
             result = result.replace(full_match, &value);
@@ -140,8 +140,8 @@ impl ConfigResolver {
         output: &OxiData,
         field_path: &str,
     ) -> anyhow::Result<String> {
-        match output {
-            OxiData::Json(json_value) => {
+        match &output.data {
+            Data::Json(json_value) => {
                 let fields: Vec<&str> = field_path.split('.').collect();
                 let mut current = json_value;
 
@@ -159,7 +159,7 @@ impl ConfigResolver {
                     _ => Ok(current.to_string()),
                 }
             }
-            OxiData::Text(_) => {
+            Data::Text(_) => {
                 // For text data, we could implement simple field extraction
                 // For now, return an error suggesting JSON format
                 anyhow::bail!(
@@ -241,7 +241,7 @@ mod tests {
                 "size": 1024
             }
         });
-        resolver.add_step_output("reader".to_string(), OxiData::Json(json_data));
+        resolver.add_step_output("reader".to_string(), OxiData::from_json(json_data));
 
         let result = resolver
             .resolve_string_references("Output: ${reader.metadata.path}")

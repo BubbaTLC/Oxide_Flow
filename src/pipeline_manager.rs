@@ -133,11 +133,11 @@ impl PipelineManager {
                     if let Some(step_map) = step.as_mapping() {
                         // Try to get step name from 'name' field, then 'id' field
                         let step_name = step_map
-                            .get(&serde_yaml::Value::String("name".to_string()))
+                            .get(serde_yaml::Value::String("name".to_string()))
                             .and_then(|v| v.as_str())
                             .or_else(|| {
                                 step_map
-                                    .get(&serde_yaml::Value::String("id".to_string()))
+                                    .get(serde_yaml::Value::String("id".to_string()))
                                     .and_then(|v| v.as_str())
                             })
                             .unwrap_or("unnamed")
@@ -157,11 +157,11 @@ impl PipelineManager {
                         for step in seq {
                             if let Some(step_map) = step.as_mapping() {
                                 let step_name = step_map
-                                    .get(&serde_yaml::Value::String("name".to_string()))
+                                    .get(serde_yaml::Value::String("name".to_string()))
                                     .and_then(|v| v.as_str())
                                     .or_else(|| {
                                         step_map
-                                            .get(&serde_yaml::Value::String("id".to_string()))
+                                            .get(serde_yaml::Value::String("id".to_string()))
                                             .and_then(|v| v.as_str())
                                     })
                                     .unwrap_or("unnamed")
@@ -292,8 +292,7 @@ impl PipelineManager {
             let steps = format!("{} steps", pipeline.step_count);
 
             output.push_str(&format!(
-                "│ {:<19} │ {:<28} │ {:<7} │ {:<9} │\n",
-                name, description, version, steps
+                "│ {name:<19} │ {description:<28} │ {version:<7} │ {steps:<9} │\n"
             ));
         }
 
@@ -327,11 +326,11 @@ impl PipelineManager {
             output.push_str(&format!("📂 Pipeline: {}\n", pipeline.name));
 
             if let Some(description) = &pipeline.description {
-                output.push_str(&format!("   📝 Description: {}\n", description));
+                output.push_str(&format!("   📝 Description: {description}\n"));
             }
 
             if let Some(author) = &pipeline.author {
-                output.push_str(&format!("   👤 Author: {}\n", author));
+                output.push_str(&format!("   👤 Author: {author}\n"));
             }
 
             if let Some(tags) = &pipeline.tags {
@@ -339,7 +338,7 @@ impl PipelineManager {
             }
 
             if let Some(version) = &pipeline.version {
-                output.push_str(&format!("   📅 Version: {}\n", version));
+                output.push_str(&format!("   📅 Version: {version}\n"));
             }
 
             output.push_str(&format!(
@@ -358,7 +357,7 @@ impl PipelineManager {
             }
 
             if let Some(created) = &pipeline.created {
-                output.push_str(&format!("   📅 Created: {}\n", created));
+                output.push_str(&format!("   📅 Created: {created}\n"));
             }
         }
 
@@ -396,7 +395,7 @@ impl PipelineManager {
 
         // Get default values from project config
         let default_author = self.project_config.project.name.clone();
-        let default_description = format!("Pipeline created from {} template", template);
+        let default_description = format!("Pipeline created from {template} template");
         let pipeline_description = description.unwrap_or(&default_description);
         let pipeline_author = author.unwrap_or(&default_author);
 
@@ -407,11 +406,11 @@ impl PipelineManager {
             .replace("{{pipeline_author}}", pipeline_author)
             .replace("{{input_file}}", "data.json")
             .replace("{{output_file}}", "output.csv")
-            .replace("{{backup_file}}", &format!("{}_backup.csv", name));
+            .replace("{{backup_file}}", &format!("{name}_backup.csv"));
 
         // Create pipeline file path
         let pipeline_dir = self.project_config.get_pipeline_directory();
-        let pipeline_path = pipeline_dir.join(format!("{}.yaml", name));
+        let pipeline_path = pipeline_dir.join(format!("{name}.yaml"));
 
         // Check if pipeline already exists
         if pipeline_path.exists() {
@@ -452,7 +451,7 @@ impl PipelineManager {
     pub fn create_pipeline_interactive(&self, name: &str) -> Result<PathBuf> {
         use std::io::{self, Write};
 
-        println!("📝 Creating new pipeline: {}\n", name);
+        println!("📝 Creating new pipeline: {name}\n");
 
         // Template selection
         println!("🎯 Select template:");
@@ -499,7 +498,7 @@ impl PipelineManager {
 
         // Get author (default from project config)
         let default_author = &self.project_config.project.name;
-        print!("\nEnter author (default: {}): ", default_author);
+        print!("\nEnter author (default: {default_author}): ");
         io::stdout().flush().unwrap();
         let mut author = String::new();
         io::stdin().read_line(&mut author)?;
@@ -514,17 +513,17 @@ impl PipelineManager {
         println!("  Name: {}", format_display_name(name));
         println!(
             "  Description: {}",
-            description.unwrap_or(&format!("{} pipeline", selected_template))
+            description.unwrap_or(&format!("{selected_template} pipeline"))
         );
         println!("  Author: {}", author.unwrap_or(default_author));
-        println!("  Template: {}", selected_template);
+        println!("  Template: {selected_template}");
 
         // Create the pipeline
         let pipeline_path = self.create_pipeline(name, selected_template, description, author)?;
 
         println!("\n✅ Created pipeline: {}", pipeline_path.display());
-        println!("\n💡 Use 'oxide_flow pipeline test {}' to validate", name);
-        println!("🚀 Use 'oxide_flow run {}' to execute", name);
+        println!("\n💡 Use 'oxide_flow pipeline test {name}' to validate");
+        println!("🚀 Use 'oxide_flow run {name}' to execute");
 
         Ok(pipeline_path)
     }
@@ -581,7 +580,7 @@ impl PipelineManager {
             Err(e) => {
                 result.yaml_valid = false;
                 result.errors.push(ValidationError::YamlSyntax {
-                    message: format!("YAML syntax error: {}", e),
+                    message: format!("YAML syntax error: {e}"),
                 });
                 return Ok(result); // Can't continue without valid YAML
             }
@@ -620,7 +619,7 @@ impl PipelineManager {
         // Check for required top-level keys
         if let Some(mapping) = yaml_doc.as_mapping() {
             // Check for pipeline key
-            if !mapping.contains_key(&serde_yaml::Value::String("pipeline".to_string())) {
+            if !mapping.contains_key(serde_yaml::Value::String("pipeline".to_string())) {
                 result.errors.push(ValidationError::Structure {
                     message: "Missing required 'pipeline' key".to_string(),
                 });
@@ -628,7 +627,7 @@ impl PipelineManager {
 
             // Validate pipeline array
             if let Some(pipeline_value) =
-                mapping.get(&serde_yaml::Value::String("pipeline".to_string()))
+                mapping.get(serde_yaml::Value::String("pipeline".to_string()))
             {
                 if let Some(steps) = pipeline_value.as_sequence() {
                     result.step_count = steps.len();
@@ -644,8 +643,7 @@ impl PipelineManager {
             }
 
             // Validate metadata (optional but recommended)
-            if let Some(metadata) = mapping.get(&serde_yaml::Value::String("metadata".to_string()))
-            {
+            if let Some(metadata) = mapping.get(serde_yaml::Value::String("metadata".to_string())) {
                 self.validate_metadata(metadata, result)?;
             } else {
                 result.warnings.push(
@@ -670,32 +668,32 @@ impl PipelineManager {
     ) -> Result<()> {
         if let Some(step_map) = step.as_mapping() {
             // Check required fields
-            let step_name = step_map.get(&serde_yaml::Value::String("name".to_string()));
-            let step_id = step_map.get(&serde_yaml::Value::String("id".to_string()));
+            let step_name = step_map.get(serde_yaml::Value::String("name".to_string()));
+            let step_id = step_map.get(serde_yaml::Value::String("id".to_string()));
 
             if step_name.is_none() {
                 result.errors.push(ValidationError::Structure {
-                    message: format!("Step {} missing required 'name' field", index),
+                    message: format!("Step {index} missing required 'name' field"),
                 });
             }
 
             if step_id.is_none() {
                 result.errors.push(ValidationError::Structure {
-                    message: format!("Step {} missing required 'id' field", index),
+                    message: format!("Step {index} missing required 'id' field"),
                 });
             }
 
             // Track step configurations
-            if step_map.contains_key(&serde_yaml::Value::String("retry_attempts".to_string())) {
+            if step_map.contains_key(serde_yaml::Value::String("retry_attempts".to_string())) {
                 result.retry_enabled_steps += 1;
             }
 
-            if step_map.contains_key(&serde_yaml::Value::String("timeout_seconds".to_string())) {
+            if step_map.contains_key(serde_yaml::Value::String("timeout_seconds".to_string())) {
                 result.timeout_configured_steps += 1;
             }
 
             if step_map
-                .get(&serde_yaml::Value::String("continue_on_error".to_string()))
+                .get(serde_yaml::Value::String("continue_on_error".to_string()))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
             {
@@ -717,7 +715,7 @@ impl PipelineManager {
             }
         } else {
             result.errors.push(ValidationError::Structure {
-                message: format!("Step {} must be a mapping", index),
+                message: format!("Step {index} must be a mapping"),
             });
         }
 
@@ -734,10 +732,10 @@ impl PipelineManager {
             // Check for recommended fields
             let recommended_fields = ["name", "description", "version", "author"];
             for field in &recommended_fields {
-                if !meta_map.contains_key(&serde_yaml::Value::String(field.to_string())) {
+                if !meta_map.contains_key(serde_yaml::Value::String(field.to_string())) {
                     result
                         .suggestions
-                        .push(format!("Consider adding '{}' to metadata", field));
+                        .push(format!("Consider adding '{field}' to metadata"));
                 }
             }
         }
@@ -767,13 +765,13 @@ impl PipelineManager {
 
         if let Some(mapping) = yaml_doc.as_mapping() {
             if let Some(pipeline_value) =
-                mapping.get(&serde_yaml::Value::String("pipeline".to_string()))
+                mapping.get(serde_yaml::Value::String("pipeline".to_string()))
             {
                 if let Some(steps) = pipeline_value.as_sequence() {
                     for step in steps {
                         if let Some(step_map) = step.as_mapping() {
                             if let Some(id_val) =
-                                step_map.get(&serde_yaml::Value::String("id".to_string()))
+                                step_map.get(serde_yaml::Value::String("id".to_string()))
                             {
                                 if let Some(id_str) = id_val.as_str() {
                                     step_ids.insert(id_str.to_string());
@@ -887,7 +885,7 @@ impl PipelineManager {
         if !result.errors.is_empty() {
             output.push_str("\n❌ Issues Found:\n");
             for error in &result.errors {
-                output.push_str(&format!("   • {}\n", error));
+                output.push_str(&format!("   • {error}\n"));
             }
         }
 
@@ -895,13 +893,13 @@ impl PipelineManager {
         if !result.warnings.is_empty() {
             output.push_str("\n⚠️  Warnings:\n");
             for warning in &result.warnings {
-                output.push_str(&format!("   • {}\n", warning));
+                output.push_str(&format!("   • {warning}\n"));
             }
         }
 
         if verbose {
             // Pipeline analysis
-            output.push_str(&format!("\n📊 Pipeline Analysis:\n"));
+            output.push_str(&"\n📊 Pipeline Analysis:\n".to_string());
             output.push_str(&format!("   📈 Steps: {} total\n", result.step_count));
             output.push_str(&format!(
                 "   🔄 Retry-enabled steps: {}\n",
@@ -929,7 +927,7 @@ impl PipelineManager {
         if !result.suggestions.is_empty() {
             output.push_str("\n💡 Suggestions:\n");
             for suggestion in &result.suggestions {
-                output.push_str(&format!("   • {}\n", suggestion));
+                output.push_str(&format!("   • {suggestion}\n"));
             }
         }
 
@@ -1008,13 +1006,13 @@ pub enum ValidationError {
 impl std::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValidationError::YamlSyntax { message } => write!(f, "YAML Syntax: {}", message),
-            ValidationError::Structure { message } => write!(f, "Structure: {}", message),
-            ValidationError::Schema { message } => write!(f, "Schema: {}", message),
+            ValidationError::YamlSyntax { message } => write!(f, "YAML Syntax: {message}"),
+            ValidationError::Structure { message } => write!(f, "Structure: {message}"),
+            ValidationError::Schema { message } => write!(f, "Schema: {message}"),
             ValidationError::EnvironmentVariable { message } => {
-                write!(f, "Environment Variable: {}", message)
+                write!(f, "Environment Variable: {message}")
             }
-            ValidationError::StepReference { message } => write!(f, "Step Reference: {}", message),
+            ValidationError::StepReference { message } => write!(f, "Step Reference: {message}"),
         }
     }
 }
@@ -1022,7 +1020,7 @@ impl std::fmt::Display for ValidationError {
 /// Truncate a string to a maximum length, adding "..." if truncated
 fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
-        format!("{:<width$}", s, width = max_len)
+        format!("{s:<max_len$}")
     } else {
         format!("{}...", &s[..max_len.saturating_sub(3)])
     }

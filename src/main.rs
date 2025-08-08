@@ -5,7 +5,7 @@ use oxide_flow::{
     pipeline::Pipeline,
     pipeline_manager::PipelineManager,
     project::{self, ProjectConfig},
-    types::OxiData,
+    types::{Data, OxiData},
 };
 
 #[tokio::main]
@@ -81,14 +81,14 @@ async fn run_pipeline_from_yaml(pipeline_path: &str) -> anyhow::Result<()> {
 
     // Use enhanced execution with error handling
     let result = pipeline
-        .execute_with_retries(OxiData::Empty, &resolver)
+        .execute_with_retries(OxiData::empty(), &resolver)
         .await;
 
     if result.success {
         if let Some(final_data) = result.final_data {
             // Display final result
-            match &final_data {
-                OxiData::Text(text) => {
+            match &final_data.data {
+                Data::Text(text) => {
                     let preview = if text.len() > 200 {
                         format!("{}... ({} characters)", &text[..200], text.len())
                     } else {
@@ -96,13 +96,13 @@ async fn run_pipeline_from_yaml(pipeline_path: &str) -> anyhow::Result<()> {
                     };
                     println!("Final Result: Text data - {preview}");
                 }
-                OxiData::Json(_) => {
+                Data::Json(_) => {
                     println!("Final Result: JSON data");
                 }
-                OxiData::Binary(data) => {
+                Data::Binary(data) => {
                     println!("Final Result: Binary data ({} bytes)", data.len());
                 }
-                OxiData::Empty => {
+                Data::Empty => {
                     println!("Final Result: Empty data");
                 }
             }
@@ -139,7 +139,7 @@ async fn handle_pipeline_command(action: PipelineAction) -> anyhow::Result<()> {
 
             // Display results
             let output = manager.format_pipeline_table(&pipelines, verbose);
-            println!("{}", output);
+            println!("{output}");
 
             Ok(())
         }
@@ -152,11 +152,11 @@ async fn handle_pipeline_command(action: PipelineAction) -> anyhow::Result<()> {
             let manager = PipelineManager::new()?;
 
             // Create pipeline with provided parameters
-            println!("📝 Creating new pipeline: {}", name);
-            println!("  Template: {}", template);
+            println!("📝 Creating new pipeline: {name}");
+            println!("  Template: {template}");
 
             manager.create_pipeline(&name, &template, description.as_deref(), author.as_deref())?;
-            println!("✅ Pipeline '{}' created successfully!", name);
+            println!("✅ Pipeline '{name}' created successfully!");
 
             Ok(())
         }
@@ -172,14 +172,14 @@ async fn handle_pipeline_command(action: PipelineAction) -> anyhow::Result<()> {
             match manager.test_pipeline(&name, dry_run, verbose, fix, schema) {
                 Ok(result) => {
                     let output = manager.format_validation_result(&result, verbose);
-                    println!("{}", output);
+                    println!("{output}");
 
                     if !result.is_valid() {
                         std::process::exit(1);
                     }
                 }
                 Err(e) => {
-                    eprintln!("❌ Pipeline testing failed: {}", e);
+                    eprintln!("❌ Pipeline testing failed: {e}");
                     std::process::exit(1);
                 }
             }
@@ -208,30 +208,30 @@ async fn handle_pipeline_command(action: PipelineAction) -> anyhow::Result<()> {
                 if json {
                     // Output as JSON
                     let json_output = serde_json::to_string_pretty(pipeline)?;
-                    println!("{}", json_output);
+                    println!("{json_output}");
                 } else if yaml {
                     // Output as YAML
                     let yaml_output = serde_yaml::to_string(pipeline)?;
-                    println!("{}", yaml_output);
+                    println!("{yaml_output}");
                 } else {
                     // Standard formatted output
                     println!("📋 Pipeline Information: {}\n", pipeline.name);
 
                     println!("📝 Metadata:");
                     if let Some(description) = &pipeline.description {
-                        println!("   Description: {}", description);
+                        println!("   Description: {description}");
                     }
                     if let Some(version) = &pipeline.version {
-                        println!("   Version: {}", version);
+                        println!("   Version: {version}");
                     }
                     if let Some(author) = &pipeline.author {
-                        println!("   Author: {}", author);
+                        println!("   Author: {author}");
                     }
                     if let Some(tags) = &pipeline.tags {
                         println!("   Tags: {}", tags.join(", "));
                     }
                     if let Some(created) = &pipeline.created {
-                        println!("   Created: {}", created);
+                        println!("   Created: {created}");
                     }
                     println!("   Location: {}", pipeline.file_path.display());
 

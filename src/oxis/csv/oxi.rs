@@ -29,9 +29,21 @@ impl Oxi for ParseCsv {
         .unwrap()
     }
 
-    async fn process_data(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    fn schema_strategy(&self) -> SchemaStrategy {
+        SchemaStrategy::Modify {
+            description: "Converts CSV text to JSON array, infers column schema from data"
+                .to_string(),
+        }
+    }
+
+    async fn process(&self, input: OxiData, config: &OxiConfig) -> Result<OxiData, OxiError> {
         // Get text from input
-        let text = input.as_text()?;
+        let text = input
+            .data
+            .as_text()
+            .map_err(|e| OxiError::ValidationError {
+                details: format!("Failed to get text from input: {e}"),
+            })?;
 
         // Get configuration
         let delimiter = config.get_string_or("delimiter", ",");
@@ -47,7 +59,10 @@ impl Oxi for ParseCsv {
         // Get headers if available
         let headers = if has_headers {
             reader
-                .headers()?
+                .headers()
+                .map_err(|e| OxiError::ValidationError {
+                    details: format!("Failed to read CSV headers: {e}"),
+                })?
                 .iter()
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>()
@@ -57,14 +72,16 @@ impl Oxi for ParseCsv {
             if let Some(Ok(record)) = first_record {
                 (0..record.len()).map(|i| format!("column_{i}")).collect()
             } else {
-                return Ok(OxiData::Json(serde_json::Value::Array(vec![])));
+                return Ok(OxiData::from_json(serde_json::Value::Array(vec![])));
             }
         };
 
         // Process records into JSON array of objects
         let mut json_array = Vec::new();
         for result in reader.records() {
-            let record = result?;
+            let record = result.map_err(|e| OxiError::ValidationError {
+                details: format!("Failed to read CSV record: {e}"),
+            })?;
             let mut json_object = serde_json::Map::new();
 
             for (i, field) in record.iter().enumerate() {
@@ -77,7 +94,8 @@ impl Oxi for ParseCsv {
             json_array.push(serde_json::Value::Object(json_object));
         }
 
-        Ok(OxiData::Json(serde_json::Value::Array(json_array)))
+        // Return JSON array with inferred schema (modify strategy)
+        Ok(OxiData::from_json(serde_json::Value::Array(json_array)))
     }
 }
 
@@ -138,17 +156,32 @@ impl Oxi for FormatCsv {
         .unwrap()
     }
 
-    async fn process_data(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    fn schema_strategy(&self) -> SchemaStrategy {
+        SchemaStrategy::Modify {
+            description: "Converts CSV rows to JSON objects".to_string(),
+        }
+    }
+
+    async fn process(&self, input: OxiData, config: &OxiConfig) -> Result<OxiData, OxiError> {
         // Get JSON array from input
-        let json_array = input.as_json()?;
+        let json_array = input
+            .data
+            .as_json()
+            .map_err(|e| OxiError::ValidationError {
+                details: format!("Failed to get JSON from input: {e}"),
+            })?;
 
         let array = match json_array {
             serde_json::Value::Array(arr) => arr,
-            _ => return Err(anyhow::anyhow!("FormatCsv requires a JSON array input")),
+            _ => {
+                return Err(OxiError::ValidationError {
+                    details: "FormatCsv requires a JSON array input".to_string(),
+                })
+            }
         };
 
         if array.is_empty() {
-            return Ok(OxiData::Text(String::new()));
+            return Ok(OxiData::from_text(String::new()));
         }
 
         // Get configuration
@@ -161,7 +194,9 @@ impl Oxi for FormatCsv {
             if let serde_json::Value::Object(obj) = first_obj {
                 obj.keys().cloned().collect()
             } else {
-                return Err(anyhow::anyhow!("FormatCsv requires array of JSON objects"));
+                return Err(OxiError::ValidationError {
+                    details: "FormatCsv requires array of JSON objects".to_string(),
+                });
             }
         } else {
             Vec::new()
@@ -174,7 +209,9 @@ impl Oxi for FormatCsv {
 
         // Write headers if requested
         if include_headers && !headers.is_empty() {
-            writer.write_record(&headers)?;
+            writer.write_record(&headers).map_err(|e| {
+                OxiError::ExecutionError(format!("Failed to write CSV headers: {e}"))
+            })?;
         }
 
         // Write data rows
@@ -191,64 +228,66 @@ impl Oxi for FormatCsv {
                         None => String::new(),
                     })
                     .collect();
-                writer.write_record(&row)?;
+                writer.write_record(&row).map_err(|e| {
+                    OxiError::ExecutionError(format!("Failed to write CSV row: {e}"))
+                })?;
             }
         }
 
         // Get the CSV as a string
-        let csv_data = String::from_utf8(writer.into_inner()?)?;
+        let csv_data = String::from_utf8(writer.into_inner().map_err(|e| {
+            OxiError::ExecutionError(format!("Failed to finalize CSV writer: {e}"))
+        })?)
+        .map_err(|e| {
+            OxiError::ExecutionError(format!("Failed to convert CSV bytes to string: {e}"))
+        })?;
 
-        Ok(OxiData::Text(csv_data))
+        // Return CSV text with inferred schema (modify strategy)
+        Ok(OxiData::from_text(csv_data))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::OxiDataWithSchema;
 
     #[tokio::test]
     async fn test_parse_csv() {
         let oxi = ParseCsv;
-        let input = OxiDataWithSchema::from_data(OxiData::Text(
-            "name,value\ntest,123\nother,456".to_string(),
-        ));
+        let input = OxiData::from_text("name,value\ntest,123\nother,456".to_string());
         let config = OxiConfig::default();
 
         let result = oxi.process(input, &config).await.unwrap();
 
-        if let OxiData::Json(json_value) = result.data {
-            if let serde_json::Value::Array(array) = json_value {
-                assert_eq!(array.len(), 2);
+        let json_value = result.data.as_json().unwrap();
+        if let serde_json::Value::Array(array) = json_value {
+            assert_eq!(array.len(), 2);
 
-                // Check first row
-                if let serde_json::Value::Object(first_row) = &array[0] {
-                    assert_eq!(
-                        first_row.get("name").unwrap(),
-                        &serde_json::Value::String("test".to_string())
-                    );
-                    assert_eq!(
-                        first_row.get("value").unwrap(),
-                        &serde_json::Value::Number(serde_json::Number::from(123))
-                    );
-                }
+            // Check first row
+            if let serde_json::Value::Object(first_row) = &array[0] {
+                assert_eq!(
+                    first_row.get("name").unwrap(),
+                    &serde_json::Value::String("test".to_string())
+                );
+                assert_eq!(
+                    first_row.get("value").unwrap(),
+                    &serde_json::Value::Number(serde_json::Number::from(123))
+                );
+            }
 
-                // Check second row
-                if let serde_json::Value::Object(second_row) = &array[1] {
-                    assert_eq!(
-                        second_row.get("name").unwrap(),
-                        &serde_json::Value::String("other".to_string())
-                    );
-                    assert_eq!(
-                        second_row.get("value").unwrap(),
-                        &serde_json::Value::Number(serde_json::Number::from(456))
-                    );
-                }
-            } else {
-                panic!("Expected JSON array");
+            // Check second row
+            if let serde_json::Value::Object(second_row) = &array[1] {
+                assert_eq!(
+                    second_row.get("name").unwrap(),
+                    &serde_json::Value::String("other".to_string())
+                );
+                assert_eq!(
+                    second_row.get("value").unwrap(),
+                    &serde_json::Value::Number(serde_json::Number::from(456))
+                );
             }
         } else {
-            panic!("Expected JSON data");
+            panic!("Expected JSON array");
         }
     }
 
@@ -262,17 +301,14 @@ mod tests {
             {"name": "other", "value": 456}
         ]);
 
-        let input = OxiDataWithSchema::from_data(OxiData::Json(json_data));
+        let input = OxiData::from_json(json_data);
         let config = OxiConfig::default();
 
         let result = oxi.process(input, &config).await.unwrap();
 
-        if let OxiData::Text(text) = result.data {
-            assert!(text.contains("name,value"));
-            assert!(text.contains("test,123"));
-            assert!(text.contains("other,456"));
-        } else {
-            panic!("Expected text data");
-        }
+        let text = result.data.as_text().unwrap();
+        assert!(text.contains("name,value"));
+        assert!(text.contains("test,123"));
+        assert!(text.contains("other,456"));
     }
 }

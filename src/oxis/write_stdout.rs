@@ -39,8 +39,8 @@ impl Oxi for WriteStdOut {
 
     fn validate_input(&self, input: &OxiData) -> Result<(), OxiError> {
         // write_stdout can handle any input type, so validation is minimal
-        match input {
-            OxiData::Binary(data) if data.len() > 100 * 1024 * 1024 => {
+        match &input.data {
+            Data::Binary(data) if data.len() > 100 * 1024 * 1024 => {
                 // Warn about very large binary data (>100MB)
                 Err(OxiError::ValidationError {
                     details: format!("Binary data is very large ({} bytes). Consider using binary: false or streaming output.", data.len()),
@@ -50,36 +50,58 @@ impl Oxi for WriteStdOut {
         }
     }
 
-    async fn process_data(&self, data: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    fn schema_strategy(&self) -> SchemaStrategy {
+        SchemaStrategy::Passthrough
+    }
+
+    async fn process(&self, input: OxiData, config: &OxiConfig) -> Result<OxiData, OxiError> {
         let format = config.get_string_or("format", "auto");
 
         match format.as_str() {
             "text" => {
-                let text = data.as_text()?;
+                let text = input
+                    .data()
+                    .as_text()
+                    .map_err(|e| OxiError::ValidationError {
+                        details: format!("Failed to get text data: {e}"),
+                    })?;
                 println!("{text}");
             }
             "json" => {
-                let value = data.as_json()?;
-                let json = serde_json::to_string_pretty(&value)?;
+                let value = input
+                    .data()
+                    .as_json()
+                    .map_err(|e| OxiError::ValidationError {
+                        details: format!("Failed to get JSON data: {e}"),
+                    })?;
+                let json = serde_json::to_string_pretty(&value).map_err(|e| {
+                    OxiError::ValidationError {
+                        details: format!("Failed to serialize JSON: {e}"),
+                    }
+                })?;
                 println!("{json}");
             }
             _ => {
                 // Auto-detect based on input type
-                match &data {
-                    OxiData::Text(text) => println!("{text}"),
-                    OxiData::Json(value) => {
-                        let json = serde_json::to_string_pretty(&value)?;
+                match &input.data {
+                    Data::Text(text) => println!("{text}"),
+                    Data::Json(value) => {
+                        let json = serde_json::to_string_pretty(&value).map_err(|e| {
+                            OxiError::ValidationError {
+                                details: format!("Failed to serialize JSON: {e}"),
+                            }
+                        })?;
                         println!("{json}");
                     }
-                    OxiData::Binary(data) => {
+                    Data::Binary(data) => {
                         println!("<Binary data: {} bytes>", data.len());
                     }
-                    OxiData::Empty => {}
+                    Data::Empty => {}
                 }
             }
         }
 
-        // Return the input data unchanged
-        Ok(data)
+        // Return the input data unchanged (passthrough schema strategy)
+        Ok(input)
     }
 }

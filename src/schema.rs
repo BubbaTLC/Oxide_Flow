@@ -87,7 +87,7 @@ impl OxiSchema {
     /// Create a new schema from YAML
     pub fn from_yaml(yaml: &serde_yaml::Value) -> Result<Self, ValidationError> {
         serde_yaml::from_value(yaml.clone()).map_err(|e| ValidationError::ValidationFailed {
-            message: format!("Failed to parse schema: {}", e),
+            message: format!("Failed to parse schema: {e}"),
         })
     }
 
@@ -170,7 +170,7 @@ impl OxiSchema {
                                 if !regex.is_match(string_val) {
                                     errors.push(ValidationError::InvalidValue {
                                         property: property_name.to_string(),
-                                        message: format!("Must match pattern: {}", pattern),
+                                        message: format!("Must match pattern: {pattern}"),
                                     });
                                 }
                             }
@@ -185,7 +185,7 @@ impl OxiSchema {
                         if num < min {
                             errors.push(ValidationError::InvalidValue {
                                 property: property_name.to_string(),
-                                message: format!("Must be >= {}", min),
+                                message: format!("Must be >= {min}"),
                             });
                         }
                     }
@@ -195,7 +195,7 @@ impl OxiSchema {
                         if num > max {
                             errors.push(ValidationError::InvalidValue {
                                 property: property_name.to_string(),
-                                message: format!("Must be <= {}", max),
+                                message: format!("Must be <= {max}"),
                             });
                         }
                     }
