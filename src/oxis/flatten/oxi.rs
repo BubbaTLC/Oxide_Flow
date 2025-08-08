@@ -1,6 +1,6 @@
 use crate::oxis::prelude::*;
+use crate::types::OxiDataWithSchema;
 use async_trait::async_trait;
-use std::collections::HashMap;
 
 /// Flatten transforms nested structured data into a flattened format
 pub struct Flatten;
@@ -27,7 +27,28 @@ impl Oxi for Flatten {
         "#).unwrap()
     }
 
-    async fn process(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    async fn process(
+        &self,
+        data_with_schema: OxiDataWithSchema,
+        config: &OxiConfig,
+    ) -> anyhow::Result<OxiDataWithSchema> {
+        // Validate input data if schema is present
+        if let Some(schema) = &data_with_schema.schema {
+            schema
+                .validate_data(&data_with_schema.data)
+                .map_err(anyhow::Error::from)?;
+        }
+
+        // Process the actual data
+        let output_data = self.process_data(data_with_schema.data, config).await?;
+
+        // Calculate output schema
+        let output_schema = self.output_schema(data_with_schema.schema.as_ref(), config)?;
+
+        Ok(OxiDataWithSchema::new(output_data, output_schema))
+    }
+
+    async fn process_data(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
         // Get configuration
         let delimiter = config.get_string_or("delimiter", "_");
         let array_mode = config.get_string_or("array_mode", "explode");
@@ -118,107 +139,6 @@ fn flatten_json_recursive(
     Ok(())
 }
 
-// Legacy YAML-based flatten functions (keeping for backward compatibility)
-
-// Flatten a nested structure into a HashMap with flattened keys
-#[allow(dead_code)]
-fn flatten_structure(
-    value: &serde_yaml::Value,
-    delimiter: &str,
-    array_mode: &str,
-) -> anyhow::Result<HashMap<String, String>> {
-    let mut result = HashMap::new();
-    flatten_value(value, "", delimiter, array_mode, &mut result)?;
-    Ok(result)
-}
-
-// Recursively flatten a value
-#[allow(dead_code)]
-fn flatten_value(
-    value: &serde_yaml::Value,
-    prefix: &str,
-    delimiter: &str,
-    array_mode: &str,
-    result: &mut HashMap<String, String>,
-) -> anyhow::Result<()> {
-    match value {
-        serde_yaml::Value::Mapping(map) => {
-            for (k, v) in map {
-                let key = if let serde_yaml::Value::String(key_str) = k {
-                    key_str.clone()
-                } else {
-                    k.as_str().unwrap_or("unknown").to_string()
-                };
-
-                let new_prefix = if prefix.is_empty() {
-                    key
-                } else {
-                    format!("{prefix}{delimiter}{key}")
-                };
-
-                flatten_value(v, &new_prefix, delimiter, array_mode, result)?;
-            }
-        }
-        serde_yaml::Value::Sequence(seq) => {
-            if array_mode == "index" {
-                for (i, item) in seq.iter().enumerate() {
-                    let new_prefix = format!("{prefix}{delimiter}{i}");
-                    flatten_value(item, &new_prefix, delimiter, array_mode, result)?;
-                }
-            } else if array_mode == "explode" {
-                // For explode mode, we join array values with commas
-                let values: Vec<String> = seq
-                    .iter()
-                    .map(|v| match v {
-                        serde_yaml::Value::String(s) => Ok(s.clone()),
-                        _ => serde_yaml::to_string(v).map_err(anyhow::Error::from),
-                    })
-                    .collect::<anyhow::Result<Vec<String>>>()?;
-
-                result.insert(prefix.to_string(), values.join(","));
-            }
-            // For "ignore" mode, we skip arrays entirely
-        }
-        serde_yaml::Value::String(s) => {
-            result.insert(prefix.to_string(), s.clone());
-        }
-        serde_yaml::Value::Number(n) => {
-            result.insert(prefix.to_string(), n.to_string());
-        }
-        serde_yaml::Value::Bool(b) => {
-            result.insert(prefix.to_string(), b.to_string());
-        }
-        serde_yaml::Value::Null => {
-            result.insert(prefix.to_string(), "".to_string());
-        }
-        _ => {
-            // Skip unknown types
-        }
-    }
-
-    Ok(())
-}
-
-// Collect all unique keys from flattened data
-#[allow(dead_code)]
-fn collect_all_keys(flattened: &HashMap<String, String>) -> Vec<String> {
-    let mut keys: Vec<String> = flattened.keys().cloned().collect();
-    keys.sort();
-    keys
-}
-
-// Create a row for tabular output using the flattened data
-#[allow(dead_code)]
-fn create_row_from_flattened(
-    flattened: &HashMap<String, String>,
-    headers: &[String],
-) -> Vec<String> {
-    headers
-        .iter()
-        .map(|header| flattened.get(header).cloned().unwrap_or_default())
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,9 +159,12 @@ mod tests {
         let input = OxiData::Json(json_data);
         let config = OxiConfig::default();
 
-        let result = oxi.process(input, &config).await.unwrap();
+        let result = oxi
+            .process(OxiDataWithSchema::from_data(input), &config)
+            .await
+            .unwrap();
 
-        if let OxiData::Json(json_result) = result {
+        if let OxiData::Json(json_result) = result.data {
             if let serde_json::Value::Object(obj) = json_result {
                 assert!(obj.contains_key("name"));
                 assert!(obj.contains_key("address_street"));

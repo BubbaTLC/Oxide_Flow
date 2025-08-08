@@ -2,10 +2,11 @@ use crate::config_resolver::ConfigResolver;
 use crate::oxis::csv::oxi::FormatCsv;
 use crate::oxis::file::oxi::{ReadFile, WriteFile};
 use crate::oxis::flatten::oxi::Flatten;
-use crate::oxis::json::oxi::ParseJson;
+use crate::oxis::format_json::oxi::FormatJson;
+use crate::oxis::parse_json::oxi::ParseJson;
 use crate::oxis::read_stdin::ReadStdIn;
 use crate::oxis::write_stdout::WriteStdOut;
-use crate::types::OxiData;
+use crate::types::{OxiData, OxiDataWithSchema};
 use crate::Oxi;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -320,41 +321,51 @@ impl PipelineStep {
     ) -> anyhow::Result<OxiData> {
         let config = self.to_oxi_config(resolver)?;
 
+        // Convert input to schema-aware format
+        let input_with_schema = OxiDataWithSchema::from_data(input);
+
         // Import and execute the specific Oxi
-        match self.name.as_str() {
+        let result_with_schema = match self.name.as_str() {
             "read_file" => {
                 let oxi = ReadFile;
-                oxi.process(input, &config).await
+                oxi.process(input_with_schema, &config).await
             }
             "write_file" => {
                 let oxi = WriteFile;
-                oxi.process(input, &config).await
+                oxi.process(input_with_schema, &config).await
             }
             "parse_json" => {
                 let oxi = ParseJson;
-                oxi.process(input, &config).await
+                oxi.process(input_with_schema, &config).await
+            }
+            "format_json" => {
+                let oxi = FormatJson;
+                oxi.process(input_with_schema, &config).await
             }
             "format_csv" => {
                 let oxi = FormatCsv;
-                oxi.process(input, &config).await
+                oxi.process(input_with_schema, &config).await
             }
             "read_stdin" => {
                 let oxi = ReadStdIn;
-                oxi.process(input, &config).await
+                oxi.process(input_with_schema, &config).await
             }
             "write_stdout" => {
                 let oxi = WriteStdOut;
-                oxi.process(input, &config).await
+                oxi.process(input_with_schema, &config).await
             }
             "flatten" => {
                 let oxi = Flatten;
-                oxi.process(input, &config).await
+                oxi.process(input_with_schema, &config).await
             }
             _ => Err(anyhow::anyhow!("Unknown Oxi: {}", self.name)),
-        }
+        }?;
+
+        // Extract data from result
+        Ok(result_with_schema.into_data())
     }
 
-    /// Convert config HashMap to OxiConfig without resolution (for backward compatibility)
+    /// Convert config HashMap to OxiConfig without resolution
     pub fn to_oxi_config_simple(&self) -> crate::types::OxiConfig {
         let mut oxi_config = crate::types::OxiConfig::default();
         for (key, value) in &self.config {

@@ -29,7 +29,7 @@ impl Oxi for ParseCsv {
         .unwrap()
     }
 
-    async fn process(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    async fn process_data(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
         // Get text from input
         let text = input.as_text()?;
 
@@ -138,7 +138,7 @@ impl Oxi for FormatCsv {
         .unwrap()
     }
 
-    async fn process(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    async fn process_data(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
         // Get JSON array from input
         let json_array = input.as_json()?;
 
@@ -205,16 +205,19 @@ impl Oxi for FormatCsv {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::OxiDataWithSchema;
 
     #[tokio::test]
     async fn test_parse_csv() {
         let oxi = ParseCsv;
-        let input = OxiData::Text("name,value\ntest,123\nother,456".to_string());
+        let input = OxiDataWithSchema::from_data(OxiData::Text(
+            "name,value\ntest,123\nother,456".to_string(),
+        ));
         let config = OxiConfig::default();
 
         let result = oxi.process(input, &config).await.unwrap();
 
-        if let OxiData::Json(json_value) = result {
+        if let OxiData::Json(json_value) = result.data {
             if let serde_json::Value::Array(array) = json_value {
                 assert_eq!(array.len(), 2);
 
@@ -259,12 +262,12 @@ mod tests {
             {"name": "other", "value": 456}
         ]);
 
-        let input = OxiData::Json(json_data);
+        let input = OxiDataWithSchema::from_data(OxiData::Json(json_data));
         let config = OxiConfig::default();
 
         let result = oxi.process(input, &config).await.unwrap();
 
-        if let OxiData::Text(text) = result {
+        if let OxiData::Text(text) = result.data {
             assert!(text.contains("name,value"));
             assert!(text.contains("test,123"));
             assert!(text.contains("other,456"));

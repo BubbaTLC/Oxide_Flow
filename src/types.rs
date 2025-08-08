@@ -103,6 +103,65 @@ impl OxiData {
             OxiData::Empty => Ok(Vec::new()),
         }
     }
+
+    /// Convert to JSON with fallback parsing
+    pub fn to_json(&self) -> anyhow::Result<serde_json::Value> {
+        match self {
+            OxiData::Json(data) => Ok(data.clone()),
+            OxiData::Text(text) => serde_json::from_str(text)
+                .map_err(|e| anyhow::anyhow!("Failed to parse text as JSON: {}", e)),
+            OxiData::Binary(_) => Err(anyhow::anyhow!("Cannot convert binary data to JSON")),
+            OxiData::Empty => Ok(serde_json::Value::Null),
+        }
+    }
+
+    /// Enhanced array handling for CSV formatting and batch processing
+    pub fn as_array(&self) -> anyhow::Result<Vec<serde_json::Value>> {
+        match self {
+            OxiData::Json(serde_json::Value::Array(arr)) => Ok(arr.clone()),
+            OxiData::Json(single_obj) => Ok(vec![single_obj.clone()]),
+            _ => Err(anyhow::anyhow!("Cannot convert to array")),
+        }
+    }
+
+    /// Check if data represents a batch (array with multiple items)
+    pub fn is_batch(&self) -> bool {
+        match self {
+            OxiData::Json(serde_json::Value::Array(arr)) => arr.len() > 1,
+            _ => false,
+        }
+    }
+
+    /// Get the batch size (number of items in array)
+    pub fn batch_size(&self) -> usize {
+        match self {
+            OxiData::Json(serde_json::Value::Array(arr)) => arr.len(),
+            _ => 1, // Single items have batch size of 1
+        }
+    }
+
+    /// Get estimated memory usage for processing limits
+    pub fn estimated_memory_usage(&self) -> usize {
+        match self {
+            OxiData::Json(value) => {
+                // Rough estimate: JSON string length * 2 for overhead
+                value.to_string().len() * 2
+            }
+            OxiData::Text(text) => text.len(),
+            OxiData::Binary(bytes) => bytes.len(),
+            OxiData::Empty => 0,
+        }
+    }
+
+    /// Get the OxiDataType for this data
+    pub fn get_data_type(&self) -> OxiDataType {
+        match self {
+            OxiData::Json(_) => OxiDataType::Json,
+            OxiData::Text(_) => OxiDataType::Text,
+            OxiData::Binary(_) => OxiDataType::Binary,
+            OxiData::Empty => OxiDataType::Empty,
+        }
+    }
 }
 
 impl fmt::Display for OxiData {
@@ -121,6 +180,51 @@ impl fmt::Display for OxiData {
                 }
             }
             OxiData::Empty => write!(f, "<Empty>"),
+        }
+    }
+}
+
+/// Data types that can be processed by Oxis
+#[derive(Debug, Clone, PartialEq)]
+pub enum OxiDataType {
+    Json,
+    Text,
+    Binary,
+    Empty,
+}
+
+impl fmt::Display for OxiDataType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OxiDataType::Json => write!(f, "JSON"),
+            OxiDataType::Text => write!(f, "Text"),
+            OxiDataType::Binary => write!(f, "Binary"),
+            OxiDataType::Empty => write!(f, "Empty"),
+        }
+    }
+}
+
+/// Processing limits that each Oxi can define to manage resource usage
+#[derive(Debug, Clone)]
+pub struct ProcessingLimits {
+    pub max_batch_size: Option<usize>,
+    pub max_memory_mb: Option<usize>,
+    pub max_processing_time_ms: Option<u64>,
+    pub supported_input_types: Vec<OxiDataType>,
+}
+
+impl Default for ProcessingLimits {
+    fn default() -> Self {
+        Self {
+            max_batch_size: Some(100_000),        // Default 100K records
+            max_memory_mb: Some(512),             // Default 512MB
+            max_processing_time_ms: Some(30_000), // Default 30s
+            supported_input_types: vec![
+                OxiDataType::Json,
+                OxiDataType::Text,
+                OxiDataType::Binary,
+                OxiDataType::Empty,
+            ],
         }
     }
 }
@@ -509,4 +613,434 @@ fn validate_property(
     }
 
     Ok(())
+}
+
+// ============================================================================
+// Schema System Types
+// ============================================================================
+
+/// Schema information that travels alongside data in the pipeline
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OxiSchema {
+    /// Field definitions keyed by field name
+    pub fields: HashMap<String, FieldSchema>,
+    /// Schema metadata and hints
+    pub metadata: SchemaMetadata,
+}
+
+impl OxiSchema {
+    /// Create a new empty schema
+    pub fn empty() -> Self {
+        Self {
+            fields: HashMap::new(),
+            metadata: SchemaMetadata::default(),
+        }
+    }
+
+    /// Add a field to the schema
+    pub fn add_field(&mut self, name: String, field: FieldSchema) {
+        self.fields.insert(name, field);
+    }
+
+    /// Validate data against this schema
+    pub fn validate_data(&self, data: &OxiData) -> Result<(), crate::error::OxiError> {
+        match data {
+            OxiData::Json(json_value) => self.validate_json_value(json_value, "root"),
+            OxiData::Text(_) => {
+                // For text data, check if schema expects text-compatible fields
+                if self.fields.len() == 1 && self.fields.contains_key("value") {
+                    Ok(())
+                } else {
+                    Err(crate::error::OxiError::ValidationError {
+                        details: "Schema validation for text data requires single 'value' field"
+                            .to_string(),
+                    })
+                }
+            }
+            OxiData::Binary(_) => {
+                // For binary data, similar check
+                if self.fields.len() == 1 && self.fields.contains_key("data") {
+                    Ok(())
+                } else {
+                    Err(crate::error::OxiError::ValidationError {
+                        details: "Schema validation for binary data requires single 'data' field"
+                            .to_string(),
+                    })
+                }
+            }
+            OxiData::Empty => Ok(()), // Empty data always validates
+        }
+    }
+
+    fn validate_json_value(
+        &self,
+        value: &serde_json::Value,
+        path: &str,
+    ) -> Result<(), crate::error::OxiError> {
+        match value {
+            serde_json::Value::Object(obj) => {
+                // Validate each field in the schema
+                for (field_name, field_schema) in &self.fields {
+                    let field_path = if path == "root" {
+                        field_name.clone()
+                    } else {
+                        format!("{}.{}", path, field_name)
+                    };
+
+                    match obj.get(field_name) {
+                        Some(field_value) => {
+                            field_schema.validate_value(field_value, &field_path)?;
+                        }
+                        None => {
+                            if !field_schema.nullable {
+                                return Err(crate::error::OxiError::ValidationError {
+                                    details: format!("Required field '{}' is missing", field_path),
+                                });
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
+            serde_json::Value::Array(arr) => {
+                // For arrays, validate each element
+                for (i, item) in arr.iter().enumerate() {
+                    let item_path = format!("{}[{}]", path, i);
+                    self.validate_json_value(item, &item_path)?;
+                }
+                Ok(())
+            }
+            _ => {
+                // Single value - check if schema has a "value" field
+                if let Some(value_field) = self.fields.get("value") {
+                    value_field.validate_value(value, &format!("{}.value", path))
+                } else {
+                    Err(crate::error::OxiError::ValidationError {
+                        details: format!(
+                            "Schema expects object structure, got single value at {}",
+                            path
+                        ),
+                    })
+                }
+            }
+        }
+    }
+}
+
+impl Default for OxiSchema {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+/// Field schema definition
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FieldSchema {
+    /// The data type of this field
+    pub field_type: FieldType,
+    /// Whether this field can be null/empty
+    pub nullable: bool,
+    /// Maximum size (for strings, arrays, etc.)
+    pub max_size: Option<usize>,
+    /// Field constraints and validation rules
+    pub constraints: Vec<FieldConstraint>,
+    /// Human-readable description
+    pub description: Option<String>,
+    /// Examples of valid values
+    pub examples: Vec<serde_json::Value>,
+}
+
+impl FieldSchema {
+    /// Create a new field schema with basic type
+    pub fn new(field_type: FieldType) -> Self {
+        Self {
+            field_type,
+            nullable: false,
+            max_size: None,
+            constraints: Vec::new(),
+            description: None,
+            examples: Vec::new(),
+        }
+    }
+
+    /// Validate a JSON value against this field schema
+    pub fn validate_value(
+        &self,
+        value: &serde_json::Value,
+        path: &str,
+    ) -> Result<(), crate::error::OxiError> {
+        if value.is_null() {
+            if !self.nullable {
+                return Err(crate::error::OxiError::ValidationError {
+                    details: format!("Field '{}' cannot be null", path),
+                });
+            }
+            return Ok(());
+        }
+
+        if !self.field_type.matches_value(value) {
+            return Err(crate::error::OxiError::ValidationError {
+                details: format!(
+                    "Field '{}' type mismatch: expected {:?}, got {}",
+                    path,
+                    self.field_type,
+                    self.value_type_name(value)
+                ),
+            });
+        }
+
+        // Validate constraints
+        for constraint in &self.constraints {
+            constraint.validate_value(value, path)?;
+        }
+
+        Ok(())
+    }
+
+    fn value_type_name(&self, value: &serde_json::Value) -> &'static str {
+        match value {
+            serde_json::Value::String(_) => "String",
+            serde_json::Value::Number(_) => "Number",
+            serde_json::Value::Bool(_) => "Boolean",
+            serde_json::Value::Array(_) => "Array",
+            serde_json::Value::Object(_) => "Object",
+            serde_json::Value::Null => "Null",
+        }
+    }
+}
+
+impl Default for FieldSchema {
+    fn default() -> Self {
+        Self::new(FieldType::Unknown)
+    }
+}
+
+/// Field type definitions
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum FieldType {
+    // Primitive types
+    String,
+    Integer,
+    Float,
+    Boolean,
+    DateTime,
+    Binary,
+
+    // Complex types
+    Array(Box<FieldType>),
+    Object(HashMap<String, FieldSchema>),
+
+    // Special types
+    Unknown, // For fields we can't determine the type
+    Mixed,   // For fields that contain multiple types
+}
+
+impl FieldType {
+    /// Check if a JSON value matches this field type
+    pub fn matches_value(&self, value: &serde_json::Value) -> bool {
+        match self {
+            FieldType::String => value.is_string(),
+            FieldType::Integer => {
+                value.is_number() && value.as_f64().map_or(false, |f| f.fract() == 0.0)
+            }
+            FieldType::Float => value.is_number(),
+            FieldType::Boolean => value.is_boolean(),
+            FieldType::DateTime => {
+                // Try to parse as ISO 8601 datetime
+                value.is_string()
+                    && value
+                        .as_str()
+                        .map_or(false, |s| chrono::DateTime::parse_from_rfc3339(s).is_ok())
+            }
+            FieldType::Binary => {
+                // For JSON, binary data is typically base64 encoded strings
+                value.is_string()
+            }
+            FieldType::Array(_) => value.is_array(),
+            FieldType::Object(_) => value.is_object(),
+            FieldType::Unknown | FieldType::Mixed => true, // Accept anything
+        }
+    }
+}
+
+/// Field constraint definitions for validation
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum FieldConstraint {
+    // Numeric constraints
+    MinValue(f64),
+    MaxValue(f64),
+
+    // String constraints
+    MinLength(usize),
+    MaxLength(usize),
+    Pattern(String), // Regex pattern
+
+    // Enum constraints
+    OneOf(Vec<serde_json::Value>),
+
+    // Custom validation
+    Custom { name: String, rule: String },
+}
+
+impl FieldConstraint {
+    /// Validate a value against this constraint
+    pub fn validate_value(
+        &self,
+        value: &serde_json::Value,
+        path: &str,
+    ) -> Result<(), crate::error::OxiError> {
+        match self {
+            FieldConstraint::MinValue(min) => {
+                if let Some(num) = value.as_f64() {
+                    if num < *min {
+                        return Err(crate::error::OxiError::ValidationError {
+                            details: format!(
+                                "Field '{}' value {} is less than minimum {}",
+                                path, num, min
+                            ),
+                        });
+                    }
+                }
+                Ok(())
+            }
+            FieldConstraint::MaxValue(max) => {
+                if let Some(num) = value.as_f64() {
+                    if num > *max {
+                        return Err(crate::error::OxiError::ValidationError {
+                            details: format!(
+                                "Field '{}' value {} is greater than maximum {}",
+                                path, num, max
+                            ),
+                        });
+                    }
+                }
+                Ok(())
+            }
+            FieldConstraint::MinLength(min_len) => {
+                if let Some(s) = value.as_str() {
+                    if s.len() < *min_len {
+                        return Err(crate::error::OxiError::ValidationError {
+                            details: format!(
+                                "Field '{}' length {} is less than minimum {}",
+                                path,
+                                s.len(),
+                                min_len
+                            ),
+                        });
+                    }
+                }
+                Ok(())
+            }
+            FieldConstraint::MaxLength(max_len) => {
+                if let Some(s) = value.as_str() {
+                    if s.len() > *max_len {
+                        return Err(crate::error::OxiError::ValidationError {
+                            details: format!(
+                                "Field '{}' length {} is greater than maximum {}",
+                                path,
+                                s.len(),
+                                max_len
+                            ),
+                        });
+                    }
+                }
+                Ok(())
+            }
+            FieldConstraint::Pattern(pattern) => {
+                if let Some(s) = value.as_str() {
+                    // For now, just check if pattern is a simple substring
+                    // In a full implementation, you'd use regex crate
+                    if !s.contains(pattern) {
+                        return Err(crate::error::OxiError::ValidationError {
+                            details: format!(
+                                "Field '{}' value '{}' does not match pattern '{}'",
+                                path, s, pattern
+                            ),
+                        });
+                    }
+                }
+                Ok(())
+            }
+            FieldConstraint::OneOf(allowed_values) => {
+                if !allowed_values.contains(value) {
+                    return Err(crate::error::OxiError::ValidationError {
+                        details: format!(
+                            "Field '{}' value must be one of {:?}",
+                            path, allowed_values
+                        ),
+                    });
+                }
+                Ok(())
+            }
+            FieldConstraint::Custom { name: _, rule: _ } => {
+                // Custom validation would be implemented here
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Schema metadata and hints
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SchemaMetadata {
+    pub version: String,
+    pub created_by: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub row_count_hint: Option<usize>,
+}
+
+impl Default for SchemaMetadata {
+    fn default() -> Self {
+        Self {
+            version: "1.0".to_string(),
+            created_by: "oxide_flow".to_string(),
+            created_at: chrono::Utc::now(),
+            row_count_hint: None,
+        }
+    }
+}
+
+/// Data container that carries schema alongside data
+#[derive(Debug, Clone)]
+pub struct OxiDataWithSchema {
+    /// The actual data
+    pub data: OxiData,
+    /// Optional schema describing the data structure
+    pub schema: Option<OxiSchema>,
+}
+
+impl OxiDataWithSchema {
+    /// Create data with schema
+    pub fn new(data: OxiData, schema: OxiSchema) -> Self {
+        Self {
+            data,
+            schema: Some(schema),
+        }
+    }
+
+    /// Create from plain OxiData (schema will be inferred when needed)
+    pub fn from_data(data: OxiData) -> Self {
+        Self { data, schema: None }
+    }
+
+    /// Extract just the data
+    pub fn into_data(self) -> OxiData {
+        self.data
+    }
+
+    /// Get a reference to the data
+    pub fn data(&self) -> &OxiData {
+        &self.data
+    }
+
+    /// Get a reference to the schema
+    pub fn schema(&self) -> Option<&OxiSchema> {
+        self.schema.as_ref()
+    }
+}
+
+impl From<OxiData> for OxiDataWithSchema {
+    fn from(data: OxiData) -> Self {
+        Self::from_data(data)
+    }
 }

@@ -30,7 +30,7 @@ impl Oxi for ReadFile {
         .unwrap()
     }
 
-    async fn process(&self, _input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    async fn process_data(&self, _input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
         // Get file path from config
         let path = config.get_string("path")?;
 
@@ -88,7 +88,7 @@ impl Oxi for WriteFile {
         .unwrap()
     }
 
-    async fn process(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    async fn process_data(&self, input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
         // Get file path from config
         let path = config.get_string("path")?;
         let create_dirs = config.get_bool_or("create_dirs", true);
@@ -123,6 +123,7 @@ impl Oxi for WriteFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::OxiDataWithSchema;
     use std::fs;
     use tempfile::tempdir;
 
@@ -143,10 +144,13 @@ mod tests {
             serde_yaml::Value::String(file_path.to_string_lossy().to_string()),
         );
 
-        let result = oxi.process(OxiData::Empty, &config).await.unwrap();
+        let result = oxi
+            .process(OxiDataWithSchema::from_data(OxiData::Empty), &config)
+            .await
+            .unwrap();
 
         // ReadFile returns JSON with content and metadata
-        let json_result = result.as_json().unwrap();
+        let json_result = result.data.as_json().unwrap();
         assert_eq!(json_result["content"].as_str().unwrap(), content);
     }
 
@@ -164,7 +168,7 @@ mod tests {
             serde_yaml::Value::String(file_path.to_string_lossy().to_string()),
         );
 
-        let input = OxiData::Text(content.to_string());
+        let input = OxiDataWithSchema::from_data(OxiData::Text(content.to_string()));
         let result = oxi.process(input, &config).await.unwrap();
 
         // Verify file was written
@@ -172,6 +176,6 @@ mod tests {
         assert_eq!(written_content, content);
 
         // Verify input was passed through
-        assert_eq!(result.as_text().unwrap(), content);
+        assert_eq!(result.data.as_text().unwrap(), content);
     }
 }

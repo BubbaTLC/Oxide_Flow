@@ -1,7 +1,4 @@
 use crate::oxis::prelude::*;
-use crate::types::{OxiConfig, OxiData};
-use async_trait::async_trait;
-use tokio::io::{self, AsyncReadExt};
 
 pub struct ReadStdIn;
 
@@ -25,7 +22,32 @@ impl Oxi for ReadStdIn {
         .unwrap()
     }
 
-    async fn process(&self, _input: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+    fn processing_limits(&self) -> ProcessingLimits {
+        ProcessingLimits {
+            max_batch_size: None,                 // stdin is single input, no batching
+            max_memory_mb: Some(64),              // Limit stdin reads to 64MB
+            max_processing_time_ms: Some(30_000), // 30 second timeout for reading
+            supported_input_types: vec![
+                OxiDataType::Empty, // Typically starts with empty input
+            ],
+        }
+    }
+
+    fn validate_input(&self, input: &OxiData) -> Result<(), OxiError> {
+        // read_stdin typically starts the pipeline, so should accept empty input
+        match input {
+            OxiData::Empty => Ok(()),
+            _ => Err(OxiError::TypeMismatch {
+                expected: "Empty (stdin reader starts pipeline)".to_string(),
+                actual: input.data_type().to_string(),
+                step: self.name().to_string(),
+            }),
+        }
+    }
+
+    async fn process_data(&self, _data: OxiData, config: &OxiConfig) -> anyhow::Result<OxiData> {
+        use tokio::io::{self, AsyncReadExt};
+
         let is_binary = config.get_bool_or("binary", false);
 
         if is_binary {
