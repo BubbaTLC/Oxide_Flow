@@ -58,6 +58,7 @@ cargo check --tests    # Fast compilation check including tests
 cargo test             # Run full test suite
 cargo clippy           # Rust linting (required by pre-commit)
 pre-commit run --all-files  # Quality checks (format, lint, audit)
+cargo add <dependency>  # Add new dependencies
 
 # CLI usage
 cargo run -- init project_name     # Initialize new project

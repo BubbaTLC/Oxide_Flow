@@ -7,6 +7,7 @@ pub mod pipeline;
 pub mod pipeline_manager;
 pub mod project;
 pub mod schema;
+pub mod state;
 pub mod types;
 
 use async_trait::async_trait;
