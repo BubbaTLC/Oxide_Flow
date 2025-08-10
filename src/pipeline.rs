@@ -7,6 +7,8 @@ use crate::oxis::format_json::oxi::FormatJson;
 use crate::oxis::parse_json::oxi::ParseJson;
 use crate::oxis::read_stdin::ReadStdIn;
 use crate::oxis::write_stdout::WriteStdOut;
+use crate::state::manager::StateManager;
+use crate::state::pipeline_tracker::PipelineTracker;
 use crate::types::OxiData;
 use crate::Oxi;
 use serde::{Deserialize, Serialize};
@@ -71,6 +73,9 @@ pub struct PipelineResult {
     pub total_duration_ms: u64,
     pub step_results: Vec<StepResult>,
     pub final_data: Option<OxiData>,
+    pub pipeline_id: Option<String>,
+    pub run_id: Option<String>,
+    pub state_tracking_enabled: bool,
 }
 
 /// Pipeline metadata
@@ -129,6 +134,17 @@ impl Pipeline {
         initial_data: OxiData,
         resolver: &ConfigResolver,
     ) -> PipelineResult {
+        self.execute_with_state_tracking(initial_data, resolver, None)
+            .await
+    }
+
+    /// Execute the pipeline with optional state tracking
+    pub async fn execute_with_state_tracking(
+        &self,
+        initial_data: OxiData,
+        resolver: &ConfigResolver,
+        state_manager: Option<StateManager>,
+    ) -> PipelineResult {
         let start_time = std::time::Instant::now();
         let mut current_data = initial_data;
         let mut step_results = Vec::new();
@@ -138,6 +154,25 @@ impl Pipeline {
 
         println!("🚀 Starting pipeline execution: {}", self.name());
 
+        // Initialize state tracking if enabled
+        let tracker = if let Some(state_manager) = state_manager {
+            match PipelineTracker::new(state_manager, self).await {
+                Ok(tracker) => {
+                    println!(
+                        "📊 State tracking enabled for pipeline: {}",
+                        tracker.pipeline_id()
+                    );
+                    Some(tracker)
+                }
+                Err(e) => {
+                    println!("⚠️  Failed to initialize state tracking: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         for (index, step) in self.pipeline.iter().enumerate() {
             println!(
                 "\n📋 Step {} of {}: '{}'",
@@ -146,15 +181,39 @@ impl Pipeline {
                 step.get_id()
             );
 
+            // Start step tracking
+            if let Some(ref tracker) = tracker {
+                if let Err(e) = tracker.start_step(step.get_id()).await {
+                    println!("⚠️  Failed to start step tracking: {}", e);
+                }
+            }
+
             let step_result = step
                 .execute_with_retries(current_data.clone(), resolver)
                 .await;
+
+            // Complete step tracking
+            if let Some(ref tracker) = tracker {
+                if let Err(e) = tracker.complete_step(&step_result).await {
+                    println!("⚠️  Failed to complete step tracking: {}", e);
+                }
+            }
 
             if step_result.success {
                 if let Some(data) = step_result.data.clone() {
                     current_data = data;
                 }
                 steps_executed += 1;
+
+                // Create checkpoint every few steps
+                if let Some(ref tracker) = tracker {
+                    if index % 3 == 0 {
+                        // Checkpoint every 3 steps
+                        if let Err(e) = tracker.create_checkpoint(&current_data).await {
+                            println!("⚠️  Failed to create checkpoint: {}", e);
+                        }
+                    }
+                }
             } else {
                 steps_failed += 1;
 
@@ -169,7 +228,16 @@ impl Pipeline {
                     steps_skipped = self.pipeline.len() - index - 1;
 
                     let total_duration = start_time.elapsed().as_millis() as u64;
-                    return PipelineResult {
+                    let (pipeline_id, run_id) = if let Some(ref tracker) = tracker {
+                        (
+                            Some(tracker.pipeline_id().to_string()),
+                            Some(tracker.run_id().to_string()),
+                        )
+                    } else {
+                        (None, None)
+                    };
+
+                    let result = PipelineResult {
                         success: false,
                         steps_executed,
                         steps_failed,
@@ -177,11 +245,30 @@ impl Pipeline {
                         total_duration_ms: total_duration,
                         step_results,
                         final_data: None,
+                        pipeline_id,
+                        run_id,
+                        state_tracking_enabled: tracker.is_some(),
                     };
+
+                    // Complete pipeline tracking
+                    if let Some(ref tracker) = tracker {
+                        if let Err(e) = tracker.complete_pipeline(&result).await {
+                            println!("⚠️  Failed to complete pipeline tracking: {}", e);
+                        }
+                    }
+
+                    return result;
                 }
             }
 
             step_results.push(step_result);
+
+            // Send heartbeat periodically
+            if let Some(ref tracker) = tracker {
+                if let Err(e) = tracker.send_heartbeat().await {
+                    println!("⚠️  Failed to send heartbeat: {}", e);
+                }
+            }
         }
 
         let total_duration = start_time.elapsed().as_millis() as u64;
@@ -198,7 +285,16 @@ impl Pipeline {
         );
         println!("⏱️  Total time: {total_duration}ms");
 
-        PipelineResult {
+        let (pipeline_id, run_id) = if let Some(ref tracker) = tracker {
+            (
+                Some(tracker.pipeline_id().to_string()),
+                Some(tracker.run_id().to_string()),
+            )
+        } else {
+            (None, None)
+        };
+
+        let result = PipelineResult {
             success,
             steps_executed: steps_executed,
             steps_failed: steps_failed,
@@ -206,7 +302,19 @@ impl Pipeline {
             total_duration_ms: total_duration,
             step_results,
             final_data: if success { Some(current_data) } else { None },
+            pipeline_id,
+            run_id,
+            state_tracking_enabled: tracker.is_some(),
+        };
+
+        // Complete pipeline tracking
+        if let Some(ref tracker) = tracker {
+            if let Err(e) = tracker.complete_pipeline(&result).await {
+                println!("⚠️  Failed to complete pipeline tracking: {}", e);
+            }
         }
+
+        result
     }
 }
 

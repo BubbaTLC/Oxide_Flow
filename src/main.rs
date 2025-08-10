@@ -1,10 +1,11 @@
 use clap::Parser;
 use oxide_flow::{
-    cli::{Cli, Commands, PipelineAction},
+    cli::{Cli, Commands, PipelineAction, StateAction, WorkerAction},
     config_resolver::ConfigResolver,
     pipeline::Pipeline,
     pipeline_manager::PipelineManager,
     project::{self, ProjectConfig},
+    state::cli::{handle_state_command, handle_worker_command},
     types::{Data, OxiData},
 };
 
@@ -43,6 +44,20 @@ async fn main() {
                 std::process::exit(1);
             }
         },
+        Commands::State { action } => match handle_state_command(action).await {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("❌ State command failed: {e}");
+                std::process::exit(1);
+            }
+        },
+        Commands::Worker { action } => match handle_worker_command(action).await {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("❌ Worker command failed: {e}");
+                std::process::exit(1);
+            }
+        },
     }
 }
 
@@ -61,12 +76,15 @@ async fn run_pipeline_by_name(pipeline_name: &str) -> anyhow::Result<()> {
         pipeline_path.display()
     );
 
-    // Run the pipeline
-    run_pipeline_from_yaml(pipeline_path.to_str().unwrap()).await
+    // Run the pipeline with state tracking
+    run_pipeline_from_yaml_with_state(pipeline_path.to_str().unwrap(), &project_config).await
 }
 
-/// Run a pipeline from a YAML file with enhanced error handling
-async fn run_pipeline_from_yaml(pipeline_path: &str) -> anyhow::Result<()> {
+/// Run a pipeline from a YAML file with state tracking support
+async fn run_pipeline_from_yaml_with_state(
+    pipeline_path: &str,
+    project_config: &ProjectConfig,
+) -> anyhow::Result<()> {
     // Load pipeline
     let pipeline = Pipeline::load_from_file(pipeline_path)?;
 
@@ -79,9 +97,29 @@ async fn run_pipeline_from_yaml(pipeline_path: &str) -> anyhow::Result<()> {
     // Create configuration resolver for dynamic references
     let resolver = ConfigResolver::default();
 
-    // Use enhanced execution with error handling
+    // Create state manager if configured
+    let state_manager = if project_config.state_manager.is_some() {
+        match oxide_flow::state::manager::StateManager::new(
+            project_config.create_state_manager_config(),
+        )
+        .await
+        {
+            Ok(manager) => {
+                println!("📊 State tracking enabled");
+                Some(manager)
+            }
+            Err(e) => {
+                println!("⚠️  Failed to initialize state tracking: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Use enhanced execution with optional state tracking
     let result = pipeline
-        .execute_with_retries(OxiData::empty(), &resolver)
+        .execute_with_state_tracking(OxiData::empty(), &resolver, state_manager)
         .await;
 
     if result.success {

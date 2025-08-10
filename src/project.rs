@@ -12,6 +12,8 @@ pub struct ProjectConfig {
     pub oxis: HashMap<String, OxiSource>,
     pub settings: ProjectSettings,
     pub environment: HashMap<String, String>,
+    #[serde(default)]
+    pub state_manager: Option<StateConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +35,76 @@ pub struct ProjectSettings {
     pub output_dir: String,
     pub pipeline_dir: String,
     pub oxis_dir: String,
+}
+
+/// State management configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateConfig {
+    /// Backend type: "file", "memory", "redis" (future)
+    #[serde(default = "default_backend")]
+    pub backend: String,
+
+    /// File backend configuration
+    #[serde(default)]
+    pub file: Option<FileStateConfig>,
+
+    /// Heartbeat interval (e.g., "10s", "5m")
+    #[serde(default = "default_heartbeat_interval")]
+    pub heartbeat_interval: String,
+
+    /// Checkpoint interval (e.g., "30s", "1m")
+    #[serde(default = "default_checkpoint_interval")]
+    pub checkpoint_interval: String,
+
+    /// Cleanup interval (e.g., "1h", "24h")
+    #[serde(default = "default_cleanup_interval")]
+    pub cleanup_interval: String,
+}
+
+/// File backend specific configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileStateConfig {
+    /// Base path for state files
+    #[serde(default = "default_state_path")]
+    pub base_path: String,
+
+    /// Lock timeout (e.g., "30s", "1m")
+    #[serde(default = "default_lock_timeout")]
+    pub lock_timeout: String,
+
+    /// Enable backup
+    #[serde(default = "default_backup_enabled")]
+    pub backup_enabled: bool,
+
+    /// Backup retention period (e.g., "7d", "30d")
+    #[serde(default = "default_backup_retention")]
+    pub backup_retention: String,
+}
+
+// Default functions for serde
+fn default_backend() -> String {
+    "file".to_string()
+}
+fn default_heartbeat_interval() -> String {
+    "10s".to_string()
+}
+fn default_checkpoint_interval() -> String {
+    "30s".to_string()
+}
+fn default_cleanup_interval() -> String {
+    "1h".to_string()
+}
+fn default_state_path() -> String {
+    ".oxiflow/state".to_string()
+}
+fn default_lock_timeout() -> String {
+    "30s".to_string()
+}
+fn default_backup_enabled() -> bool {
+    true
+}
+fn default_backup_retention() -> String {
+    "7d".to_string()
 }
 
 impl ProjectConfig {
@@ -140,6 +212,109 @@ impl ProjectConfig {
 
         Ok(pipelines)
     }
+
+    /// Create a StateManagerConfig from the project configuration
+    pub fn create_state_manager_config(&self) -> crate::state::manager::StateManagerConfig {
+        use crate::state::backend::{BackendConfig, SerializationFormat};
+        use crate::state::manager::StateManagerConfig;
+
+        let backend = match &self.state_manager {
+            Some(state_config) => match state_config.backend.as_str() {
+                "file" => {
+                    let file_config =
+                        state_config
+                            .file
+                            .as_ref()
+                            .cloned()
+                            .unwrap_or_else(|| FileStateConfig {
+                                base_path: default_state_path(),
+                                lock_timeout: default_lock_timeout(),
+                                backup_enabled: default_backup_enabled(),
+                                backup_retention: default_backup_retention(),
+                            });
+
+                    BackendConfig::File {
+                        base_path: PathBuf::from(&file_config.base_path),
+                        format: SerializationFormat::Json,
+                        atomic_writes: true,
+                        lock_timeout_ms: parse_duration(&file_config.lock_timeout).unwrap_or(30000),
+                    }
+                }
+                "memory" => BackendConfig::Memory { persistent: false },
+                _ => {
+                    eprintln!(
+                        "⚠️  Unknown backend type '{}', falling back to file",
+                        state_config.backend
+                    );
+                    BackendConfig::File {
+                        base_path: PathBuf::from(".oxiflow/state"),
+                        format: SerializationFormat::Json,
+                        atomic_writes: true,
+                        lock_timeout_ms: 30000,
+                    }
+                }
+            },
+            None => {
+                // Default to file backend
+                BackendConfig::File {
+                    base_path: PathBuf::from(".oxiflow/state"),
+                    format: SerializationFormat::Json,
+                    atomic_writes: true,
+                    lock_timeout_ms: 30000,
+                }
+            }
+        };
+
+        StateManagerConfig {
+            backend,
+            default_lock_timeout_ms: 30000,
+            worker_id: format!("worker_{}", std::process::id()),
+            heartbeat_interval_ms: self
+                .state_manager
+                .as_ref()
+                .and_then(|s| parse_duration(&s.heartbeat_interval))
+                .unwrap_or(10000),
+            max_retries: 3,
+            cleanup_interval_hours: 24,
+            max_state_age_hours: 168,
+        }
+    }
+}
+
+/// Parse duration string (e.g., "30s", "5m", "1h") to milliseconds
+fn parse_duration(duration_str: &str) -> Option<u64> {
+    let duration_str = duration_str.trim();
+    if duration_str.is_empty() {
+        return None;
+    }
+
+    let (number_str, unit) = if duration_str.ends_with("ms") {
+        (&duration_str[..duration_str.len() - 2], "ms")
+    } else if duration_str.ends_with('s') {
+        (&duration_str[..duration_str.len() - 1], "s")
+    } else if duration_str.ends_with('m') {
+        (&duration_str[..duration_str.len() - 1], "m")
+    } else if duration_str.ends_with('h') {
+        (&duration_str[..duration_str.len() - 1], "h")
+    } else if duration_str.ends_with('d') {
+        (&duration_str[..duration_str.len() - 1], "d")
+    } else {
+        // Assume seconds if no unit
+        (duration_str, "s")
+    };
+
+    let number: u64 = number_str.parse().ok()?;
+
+    let milliseconds = match unit {
+        "ms" => number,
+        "s" => number * 1000,
+        "m" => number * 60 * 1000,
+        "h" => number * 60 * 60 * 1000,
+        "d" => number * 24 * 60 * 60 * 1000,
+        _ => return None,
+    };
+
+    Some(milliseconds)
 }
 
 /// Initialize a new Oxide Flow project
@@ -253,6 +428,20 @@ settings:
   output_dir: "./output"
   pipeline_dir: "./pipelines"
   oxis_dir: "./oxis"
+
+# State management configuration
+state_manager:
+  backend: file  # Currently only file backend supported
+
+  file:
+    base_path: ".oxiflow/state"
+    lock_timeout: "30s"
+    backup_enabled: true
+    backup_retention: "7d"
+
+  heartbeat_interval: "10s"
+  checkpoint_interval: "30s"
+  cleanup_interval: "1h"
 
 # Default environment variables (can be overridden)
 environment:

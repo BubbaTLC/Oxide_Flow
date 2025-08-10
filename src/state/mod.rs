@@ -1,5 +1,7 @@
 pub mod backend;
+pub mod cli;
 pub mod manager;
+pub mod pipeline_tracker;
 pub mod types;
 
 // Re-export common types for convenience
