@@ -165,7 +165,7 @@ impl Pipeline {
                     Some(tracker)
                 }
                 Err(e) => {
-                    println!("⚠️  Failed to initialize state tracking: {}", e);
+                    println!("⚠️  Failed to initialize state tracking: {e}");
                     None
                 }
             }
@@ -184,7 +184,7 @@ impl Pipeline {
             // Start step tracking
             if let Some(ref tracker) = tracker {
                 if let Err(e) = tracker.start_step(step.get_id()).await {
-                    println!("⚠️  Failed to start step tracking: {}", e);
+                    println!("⚠️  Failed to start step tracking: {e}");
                 }
             }
 
@@ -195,7 +195,7 @@ impl Pipeline {
             // Complete step tracking
             if let Some(ref tracker) = tracker {
                 if let Err(e) = tracker.complete_step(&step_result).await {
-                    println!("⚠️  Failed to complete step tracking: {}", e);
+                    println!("⚠️  Failed to complete step tracking: {e}");
                 }
             }
 
@@ -210,7 +210,7 @@ impl Pipeline {
                     if index % 3 == 0 {
                         // Checkpoint every 3 steps
                         if let Err(e) = tracker.create_checkpoint(&current_data).await {
-                            println!("⚠️  Failed to create checkpoint: {}", e);
+                            println!("⚠️  Failed to create checkpoint: {e}");
                         }
                     }
                 }
@@ -253,7 +253,7 @@ impl Pipeline {
                     // Complete pipeline tracking
                     if let Some(ref tracker) = tracker {
                         if let Err(e) = tracker.complete_pipeline(&result).await {
-                            println!("⚠️  Failed to complete pipeline tracking: {}", e);
+                            println!("⚠️  Failed to complete pipeline tracking: {e}");
                         }
                     }
 
@@ -266,7 +266,7 @@ impl Pipeline {
             // Send heartbeat periodically
             if let Some(ref tracker) = tracker {
                 if let Err(e) = tracker.send_heartbeat().await {
-                    println!("⚠️  Failed to send heartbeat: {}", e);
+                    println!("⚠️  Failed to send heartbeat: {e}");
                 }
             }
         }
@@ -296,8 +296,8 @@ impl Pipeline {
 
         let result = PipelineResult {
             success,
-            steps_executed: steps_executed,
-            steps_failed: steps_failed,
+            steps_executed,
+            steps_failed,
             steps_skipped: steps_skipped as u32,
             total_duration_ms: total_duration,
             step_results,
@@ -310,7 +310,7 @@ impl Pipeline {
         // Complete pipeline tracking
         if let Some(ref tracker) = tracker {
             if let Err(e) = tracker.complete_pipeline(&result).await {
-                println!("⚠️  Failed to complete pipeline tracking: {}", e);
+                println!("⚠️  Failed to complete pipeline tracking: {e}");
             }
         }
 

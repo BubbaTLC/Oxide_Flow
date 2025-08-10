@@ -288,16 +288,16 @@ fn parse_duration(duration_str: &str) -> Option<u64> {
         return None;
     }
 
-    let (number_str, unit) = if duration_str.ends_with("ms") {
-        (&duration_str[..duration_str.len() - 2], "ms")
-    } else if duration_str.ends_with('s') {
-        (&duration_str[..duration_str.len() - 1], "s")
-    } else if duration_str.ends_with('m') {
-        (&duration_str[..duration_str.len() - 1], "m")
-    } else if duration_str.ends_with('h') {
-        (&duration_str[..duration_str.len() - 1], "h")
-    } else if duration_str.ends_with('d') {
-        (&duration_str[..duration_str.len() - 1], "d")
+    let (number_str, unit) = if let Some(stripped) = duration_str.strip_suffix("ms") {
+        (stripped, "ms")
+    } else if let Some(stripped) = duration_str.strip_suffix('s') {
+        (stripped, "s")
+    } else if let Some(stripped) = duration_str.strip_suffix('m') {
+        (stripped, "m")
+    } else if let Some(stripped) = duration_str.strip_suffix('h') {
+        (stripped, "h")
+    } else if let Some(stripped) = duration_str.strip_suffix('d') {
+        (stripped, "d")
     } else {
         // Assume seconds if no unit
         (duration_str, "s")

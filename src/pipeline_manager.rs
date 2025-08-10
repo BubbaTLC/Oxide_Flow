@@ -899,7 +899,7 @@ impl PipelineManager {
 
         if verbose {
             // Pipeline analysis
-            output.push_str(&"\n📊 Pipeline Analysis:\n".to_string());
+            output.push_str("\n📊 Pipeline Analysis:\n");
             output.push_str(&format!("   📈 Steps: {} total\n", result.step_count));
             output.push_str(&format!(
                 "   🔄 Retry-enabled steps: {}\n",

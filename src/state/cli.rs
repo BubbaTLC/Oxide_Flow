@@ -103,7 +103,7 @@ async fn show_state(
             }
         }
         Err(_) => {
-            println!("❌ No state found for pipeline: {}", pipeline);
+            println!("❌ No state found for pipeline: {pipeline}");
             std::process::exit(1);
         }
     }
@@ -197,7 +197,7 @@ async fn cleanup_states(
 
     println!("🧹 Found {} states to clean up:", to_clean.len());
     for state in &to_clean {
-        print_state_summary(&state);
+        print_state_summary(state);
     }
 
     if dry_run {
@@ -248,7 +248,7 @@ async fn export_state(
     };
 
     fs::write(output, content)?;
-    println!("✅ Exported state for {} to {}", pipeline, output);
+    println!("✅ Exported state for {pipeline} to {output}");
     Ok(())
 }
 
@@ -288,7 +288,7 @@ async fn import_state(
     }
 
     state_manager.save_state(&state).await?;
-    println!("✅ Imported state for {} from {}", pipeline, input);
+    println!("✅ Imported state for {pipeline} from {input}");
     Ok(())
 }
 
@@ -350,10 +350,7 @@ async fn stop_worker(state_manager: &StateManager, worker_id: &str, force: bool)
                     found = true;
 
                     if !force {
-                        print!(
-                            "❓ Are you sure you want to stop worker {}? (y/N): ",
-                            worker_id
-                        );
+                        print!("❓ Are you sure you want to stop worker {worker_id}? (y/N): ");
                         use std::io::{self, Write};
                         io::stdout().flush()?;
 
@@ -376,10 +373,7 @@ async fn stop_worker(state_manager: &StateManager, worker_id: &str, force: bool)
                         })
                         .await?;
 
-                    println!(
-                        "✅ Worker {} stopped for pipeline {}",
-                        worker_id, pipeline_id
-                    );
+                    println!("✅ Worker {worker_id} stopped for pipeline {pipeline_id}");
                     break;
                 }
             }
@@ -387,7 +381,7 @@ async fn stop_worker(state_manager: &StateManager, worker_id: &str, force: bool)
     }
 
     if !found {
-        println!("❌ Worker not found: {}", worker_id);
+        println!("❌ Worker not found: {worker_id}");
         std::process::exit(1);
     }
 

@@ -1,0 +1,63 @@
+# Basic State Management Configuration
+
+# This configuration enables basic state management with sensible defaults
+# Suitable for development and small production deployments
+
+# Project metadata
+name: "basic_state_example"
+version: "1.0.0"
+
+# Basic state management configuration
+state:
+  enabled: true
+  backend: "file"
+  backend_config:
+    state_dir: ".oxiflow/state"
+    lock_timeout: "30s"
+    backup_enabled: true
+    backup_retention: "7d"
+
+  # Timing configuration
+  heartbeat_interval: "10s"
+  checkpoint_interval: "30s"
+  cleanup_interval: "1h"
+
+# Pipeline configuration
+pipelines:
+  - name: "example_pipeline"
+    steps:
+      - name: "read_data"
+        oxi: "file_read"
+        config:
+          path: "input/data.json"
+
+      - name: "process_data"
+        oxi: "parse_json"
+        config:
+          schema: "auto"
+
+      - name: "write_output"
+        oxi: "file_write"
+        config:
+          path: "output/processed.json"
+
+# Usage Instructions:
+#
+# 1. Initialize project:
+#    oxiflow init --config basic_configuration.yaml
+#
+# 2. Run pipeline with state tracking:
+#    oxiflow run example_pipeline
+#
+# 3. Check state:
+#    oxiflow state show example_pipeline
+#    oxiflow state list
+#
+# 4. Monitor progress:
+#    oxiflow state diagnostics
+#
+# Expected behavior:
+# - State files created in .oxiflow/state/
+# - Automatic backups created before any repair
+# - Cleanup runs every hour
+# - Pipeline state persists across restarts

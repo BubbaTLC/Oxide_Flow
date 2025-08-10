@@ -1,6 +1,6 @@
 use clap::Parser;
 use oxide_flow::{
-    cli::{Cli, Commands, PipelineAction, StateAction, WorkerAction},
+    cli::{Cli, Commands, PipelineAction},
     config_resolver::ConfigResolver,
     pipeline::Pipeline,
     pipeline_manager::PipelineManager,
@@ -109,7 +109,7 @@ async fn run_pipeline_from_yaml_with_state(
                 Some(manager)
             }
             Err(e) => {
-                println!("⚠️  Failed to initialize state tracking: {}", e);
+                println!("⚠️  Failed to initialize state tracking: {e}");
                 None
             }
         }

@@ -172,6 +172,38 @@ pub enum StateError {
 
     #[error("Worker not found: {worker_id}")]
     WorkerNotFound { worker_id: String },
+
+    // Production hardening error types
+    #[error("State file corrupted: {path}, reason: {reason}")]
+    StateCorrupted { path: String, reason: String },
+
+    #[error("Backup operation failed: {details}")]
+    BackupFailed { details: String },
+
+    #[error("Recovery operation failed: {details}")]
+    RecoveryFailed { details: String },
+
+    #[error("State validation failed: {validation_errors:?}")]
+    ValidationFailed { validation_errors: Vec<String> },
+
+    #[error("File system error: {operation}, path: {path}, error: {error}")]
+    FileSystemError {
+        operation: String,
+        path: String,
+        error: String,
+    },
+
+    #[error("Permission denied: {path}")]
+    PermissionDenied { path: String },
+
+    #[error("Disk space insufficient: {required_bytes} bytes needed, {available_bytes} available")]
+    InsufficientDiskSpace {
+        required_bytes: u64,
+        available_bytes: u64,
+    },
+
+    #[error("Maximum retries exceeded: {max_retries} for operation: {operation}")]
+    MaxRetriesExceeded { max_retries: u32, operation: String },
 }
 
 impl PipelineState {
@@ -252,6 +284,147 @@ impl PipelineState {
             + self.current_step.len()
             + self.step_states.len() * 500 // Rough estimate per step
             + self.errors.len() * 200 // Rough estimate per error
+    }
+
+    /// Validate the integrity and consistency of the pipeline state
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        // Basic field validation
+        if self.pipeline_id.is_empty() {
+            errors.push("Pipeline ID cannot be empty".to_string());
+        }
+
+        if self.run_id.is_empty() {
+            errors.push("Run ID cannot be empty".to_string());
+        }
+
+        if self.version == 0 {
+            errors.push("Version must be greater than 0".to_string());
+        }
+
+        // Status consistency checks
+        match &self.status {
+            PipelineStatus::Running { started_at } => {
+                if started_at > &Utc::now() {
+                    errors.push("Pipeline start time cannot be in the future".to_string());
+                }
+                if self.current_step.is_empty() {
+                    errors.push("Running pipeline must have a current step".to_string());
+                }
+            }
+            PipelineStatus::Completed { completed_at } => {
+                if completed_at < &self.started_at {
+                    errors.push("Completion time cannot be before start time".to_string());
+                }
+                if completed_at > &Utc::now() {
+                    errors.push("Completion time cannot be in the future".to_string());
+                }
+            }
+            PipelineStatus::Failed { failed_at, .. } => {
+                if failed_at < &self.started_at {
+                    errors.push("Failure time cannot be before start time".to_string());
+                }
+                if failed_at > &Utc::now() {
+                    errors.push("Failure time cannot be in the future".to_string());
+                }
+            }
+            _ => {} // Other statuses are fine
+        }
+
+        // Step state consistency checks
+        for (step_id, step_state) in &self.step_states {
+            if step_state.step_id != *step_id {
+                errors.push(format!(
+                    "Step ID mismatch: key '{}' vs state '{}'",
+                    step_id, step_state.step_id
+                ));
+            }
+
+            // Validate step status consistency
+            match &step_state.status {
+                StepStatus::Completed { completed_at } => {
+                    if step_state.records_processed == 0 && step_state.processing_time_ms == 0 {
+                        errors.push(format!(
+                            "Completed step '{step_id}' should have processing metrics"
+                        ));
+                    }
+                    if completed_at > &Utc::now() {
+                        errors.push(format!(
+                            "Step '{step_id}' completion time cannot be in the future"
+                        ));
+                    }
+                }
+                StepStatus::Failed { failed_at, .. } => {
+                    if failed_at > &Utc::now() {
+                        errors.push(format!(
+                            "Step '{step_id}' failure time cannot be in the future"
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Data consistency checks
+        let step_records_total: u64 = self.step_states.values().map(|s| s.records_processed).sum();
+
+        if step_records_total > 0 && self.records_processed == 0 {
+            errors.push("Total records processed should reflect step totals".to_string());
+        }
+
+        // Timestamp consistency
+        if self.last_success_timestamp < self.started_at {
+            errors.push("Last success timestamp cannot be before start time".to_string());
+        }
+
+        if self.last_heartbeat < self.started_at {
+            errors.push("Last heartbeat cannot be before start time".to_string());
+        }
+
+        // Error validation
+        for (idx, error) in self.errors.iter().enumerate() {
+            if error.timestamp < self.started_at {
+                errors.push(format!(
+                    "Error {idx} timestamp cannot be before pipeline start"
+                ));
+            }
+            if error.message.is_empty() {
+                errors.push(format!("Error {idx} message cannot be empty"));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    /// Create a checksum/hash of the state for corruption detection
+    pub fn checksum(&self) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+
+        // Hash key fields that shouldn't change unexpectedly
+        self.pipeline_id.hash(&mut hasher);
+        self.run_id.hash(&mut hasher);
+        self.version.hash(&mut hasher);
+        self.records_processed.hash(&mut hasher);
+        self.batch_number.hash(&mut hasher);
+
+        format!("{:x}", hasher.finish())
+    }
+
+    /// Check if the state appears to be corrupted by validating critical fields
+    pub fn is_corrupted(&self) -> bool {
+        // Basic corruption checks
+        self.pipeline_id.is_empty()
+            || self.run_id.is_empty()
+            || self.version == 0
+            || self.validate().is_err()
     }
 }
 

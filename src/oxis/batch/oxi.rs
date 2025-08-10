@@ -31,9 +31,10 @@ impl Default for BatchConfig {
 }
 
 /// Different batching strategies
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub enum BatchStrategy {
     /// Flush when batch reaches size limit
+    #[default]
     Size,
     /// Flush on time interval
     Time,
@@ -45,12 +46,6 @@ pub enum BatchStrategy {
     SizeOrMemory,
     /// Flush when any condition is met (size, time, or memory)
     Any,
-}
-
-impl Default for BatchStrategy {
-    fn default() -> Self {
-        BatchStrategy::Size
-    }
 }
 
 #[async_trait]
@@ -188,10 +183,7 @@ impl Batch {
 
                 // Return batched array
                 let batched_json = serde_json::Value::Array(
-                    batches
-                        .into_iter()
-                        .map(|batch| serde_json::Value::Array(batch))
-                        .collect(),
+                    batches.into_iter().map(serde_json::Value::Array).collect(),
                 );
 
                 Ok(OxiData::with_schema(
@@ -417,12 +409,11 @@ impl Batch {
                 if matches!(
                     strategy,
                     BatchStrategy::Time | BatchStrategy::SizeOrTime | BatchStrategy::Any
-                ) {
-                    if last_flush.elapsed() >= interval {
-                        // Force smaller chunk for time-based flush
-                        chunk_end = current_pos + (chunk_size / 2).max(1).min(remaining);
-                        last_flush = Instant::now();
-                    }
+                ) && last_flush.elapsed() >= interval
+                {
+                    // Force smaller chunk for time-based flush
+                    chunk_end = current_pos + (chunk_size / 2).max(1).min(remaining);
+                    last_flush = Instant::now();
                 }
             }
 
@@ -445,6 +436,7 @@ impl Batch {
     }
 
     /// Determine if we should flush the current batch
+    #[allow(clippy::too_many_arguments)]
     fn should_flush(
         &self,
         strategy: &BatchStrategy,
@@ -491,6 +483,7 @@ impl Batch {
     }
 
     /// Estimate memory usage of a JSON value
+    #[allow(clippy::only_used_in_recursion)]
     fn estimate_json_memory(&self, value: &serde_json::Value) -> usize {
         match value {
             serde_json::Value::Null => 4,

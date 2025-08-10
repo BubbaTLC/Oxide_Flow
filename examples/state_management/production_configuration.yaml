@@ -1,0 +1,131 @@
+# Production State Management Configuration
+
+# This configuration provides production-ready state management with
+# enhanced performance, monitoring, and reliability features
+
+# Project metadata
+name: "production_state_example"
+version: "1.0.0"
+description: "Production-ready state management configuration"
+
+# Production state management configuration
+state:
+  enabled: true
+  backend: "file"
+  backend_config:
+    # State storage configuration
+    state_dir: "/var/lib/oxiflow/state"  # Production path
+    lock_timeout: "60s"                  # Longer timeout for production
+    backup_enabled: true
+    backup_retention: "30d"              # Longer retention for production
+
+    # Performance optimization
+    atomic_writes: true                  # Ensure data integrity
+    cache_size: 500                      # Larger cache for better performance
+    compression_enabled: true            # Compress state files (future feature)
+
+    # Reliability features
+    checksums_enabled: true              # Enable integrity checking
+    repair_enabled: true                 # Allow automatic repairs
+    max_repair_attempts: 3               # Limit repair attempts
+
+  # Timing configuration - optimized for production
+  heartbeat_interval: "5s"               # More frequent heartbeats
+  checkpoint_interval: "15s"             # More frequent checkpoints
+  cleanup_interval: "30m"                # More frequent cleanup
+
+  # Monitoring configuration
+  metrics_enabled: true
+  metrics_retention: "24h"
+  health_check_interval: "1m"
+
+# Production pipeline configuration
+pipelines:
+  - name: "production_etl"
+    description: "Production ETL pipeline with full state tracking"
+    retry_policy:
+      max_retries: 3
+      retry_delay: "30s"
+      exponential_backoff: true
+
+    timeout: "1h"
+
+    steps:
+      - name: "extract"
+        oxi: "database_read"
+        config:
+          connection_string: "${DB_CONNECTION_STRING}"
+          query: "SELECT * FROM source_table WHERE updated_at > ${LAST_PROCESSED_TIME}"
+        timeout: "10m"
+
+      - name: "transform"
+        oxi: "batch_transform"
+        config:
+          batch_size: 1000
+          parallel_workers: 4
+        timeout: "20m"
+
+      - name: "load"
+        oxi: "database_write"
+        config:
+          connection_string: "${TARGET_DB_CONNECTION_STRING}"
+          table: "target_table"
+          batch_size: 500
+        timeout: "15m"
+
+# Environment-specific configuration
+environments:
+  production:
+    state:
+      backend_config:
+        state_dir: "/var/lib/oxiflow/state"
+        backup_retention: "90d"         # Longer retention in prod
+        cache_size: 1000                # Larger cache in prod
+
+      # Production monitoring
+      alerting:
+        error_threshold: 0.01           # 1% error rate threshold
+        performance_threshold:
+          avg_read_time_ms: 100
+          avg_write_time_ms: 200
+          cache_hit_rate: 0.8
+
+        webhooks:
+          - url: "${SLACK_WEBHOOK_URL}"
+            events: ["error", "performance_degradation"]
+          - url: "${PAGERDUTY_WEBHOOK_URL}"
+            events: ["critical_error", "system_failure"]
+
+  staging:
+    state:
+      backend_config:
+        state_dir: "/tmp/oxiflow/state"
+        backup_retention: "7d"
+        cache_size: 200
+
+# Usage Instructions:
+#
+# 1. Set up production environment:
+#    sudo mkdir -p /var/lib/oxiflow/state
+#    sudo chown oxiflow:oxiflow /var/lib/oxiflow/state
+#    sudo chmod 755 /var/lib/oxiflow/state
+#
+# 2. Deploy configuration:
+#    oxiflow init --config production_configuration.yaml --env production
+#
+# 3. Start production pipeline:
+#    oxiflow run production_etl --env production
+#
+# 4. Monitor state:
+#    oxiflow state diagnostics --verbose
+#    oxiflow worker list
+#
+# 5. Set up monitoring:
+#    # Add to cron for regular health checks
+#    */5 * * * * /usr/local/bin/oxiflow state diagnostics --check-health
+#
+# Expected behavior:
+# - High-performance state operations with caching
+# - Automatic error recovery and repair
+# - Comprehensive monitoring and alerting
+# - Production-grade reliability and data integrity

@@ -17,6 +17,7 @@ pub struct PipelineTracker {
     state_manager: StateManager,
     pipeline_id: String,
     run_id: String,
+    #[allow(dead_code)] // Used for future timing features
     start_time: Instant,
     started_at: DateTime<Utc>,
 }
@@ -261,23 +262,21 @@ impl PipelineTracker {
 
     /// Resume a pipeline from its last state
     pub async fn resume(state_manager: StateManager, pipeline_id: &str) -> Result<Option<Self>> {
-        match state_manager.load_state(pipeline_id).await {
-            Ok(state) => {
-                if matches!(
-                    state.status,
-                    PipelineStatus::Running { .. } | PipelineStatus::Paused { .. }
-                ) {
-                    return Ok(Some(Self {
-                        state_manager,
-                        pipeline_id: pipeline_id.to_string(),
-                        run_id: state.run_id,
-                        start_time: Instant::now(), // Reset timer for resumed execution
-                        started_at: state.started_at,
-                    }));
-                }
+        if let Ok(state) = state_manager.load_state(pipeline_id).await {
+            if matches!(
+                state.status,
+                PipelineStatus::Running { .. } | PipelineStatus::Paused { .. }
+            ) {
+                return Ok(Some(Self {
+                    state_manager,
+                    pipeline_id: pipeline_id.to_string(),
+                    run_id: state.run_id,
+                    start_time: Instant::now(), // Reset timer for resumed execution
+                    started_at: state.started_at,
+                }));
             }
-            Err(_) => {} // State doesn't exist
         }
+        // State doesn't exist or is not resumable
         Ok(None)
     }
 
@@ -296,9 +295,8 @@ impl PipelineTracker {
 mod tests {
     use super::*;
     use crate::pipeline::{Pipeline, PipelineMetadata};
-    use crate::state::backend::{BackendConfig, MemoryBackend, SerializationFormat};
+    use crate::state::backend::BackendConfig;
     use crate::state::manager::{StateManager, StateManagerConfig};
-    use std::path::PathBuf;
 
     fn create_test_pipeline() -> Pipeline {
         Pipeline {
