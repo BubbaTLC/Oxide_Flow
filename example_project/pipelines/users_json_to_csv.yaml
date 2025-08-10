@@ -1,0 +1,45 @@
+# Large Dataset Users to CSV Pipeline
+# Extracts users from large JSON and converts to CSV
+
+pipeline:
+  - name: read_file
+    id: reader
+    config:
+      path: "${INPUT_FILE:-input/large_dataset.json}"
+
+  - name: parse_json
+    id: parser
+
+  - name: flatten
+    id: flatten_users
+    config:
+      delimiter: "${FLATTEN_DELIMITER:-_}"
+      array_mode: "explode"
+
+  - name: format_csv
+    id: csv_formatter
+    config:
+      delimiter: "${CSV_DELIMITER:-,}"
+      include_headers: "${INCLUDE_HEADERS:-true}"
+
+  - name: write_file
+    id: writer
+    config:
+      path: "${OUTPUT_FILE:-output/users.csv}"
+      create_dirs: true
+
+# Pipeline metadata
+metadata:
+  name: "Large Dataset Users to CSV"
+  description: "Extracts and flattens user data from large JSON datasets"
+  version: "1.0"
+  category: "data_extraction"
+  tags: ["json", "csv", "large_data", "flatten"]
+
+# Environment defaults
+environment:
+  INPUT_FILE: "input/test_dataset.json"
+  OUTPUT_FILE: "output/users.csv"
+  CSV_DELIMITER: ","
+  INCLUDE_HEADERS: "true"
+  FLATTEN_DELIMITER: "_"

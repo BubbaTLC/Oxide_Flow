@@ -1,0 +1,42 @@
+# Debug Pipeline - Test Flatten Step
+
+pipeline:
+  - name: read_file
+    id: reader
+    config:
+      path: "input/test_dataset.json"
+
+  - name: parse_json
+    id: parser
+
+  - name: json_select
+    id: json_selector
+    config:
+      path: "[0].users"
+
+  - name: flatten
+    id: flatten_test
+    config:
+      delimiter: "_"
+      array_mode: "explode"
+
+  - name: format_csv
+    id: csv_test
+    config:
+      delimiter: ","
+      include_headers: true
+
+  # - name: write_stdout
+  #   id: stdout_writer
+
+  - name: write_file
+    id: debug_writer
+    config:
+      path: "output/users.csv"
+      create_dirs: true
+
+# Pipeline metadata
+metadata:
+  name: "Debug Flatten"
+  description: "Debug the flatten step"
+  version: "1.0"

@@ -4,6 +4,7 @@ use crate::oxis::csv::oxi::FormatCsv;
 use crate::oxis::file::oxi::{ReadFile, WriteFile};
 use crate::oxis::flatten::oxi::Flatten;
 use crate::oxis::format_json::oxi::FormatJson;
+use crate::oxis::json_select::JsonSelect;
 use crate::oxis::parse_json::oxi::ParseJson;
 use crate::oxis::read_stdin::ReadStdIn;
 use crate::oxis::write_stdout::WriteStdOut;
@@ -462,6 +463,10 @@ impl PipelineStep {
             }
             "flatten" => {
                 let oxi = Flatten;
+                oxi.process(input, &config).await
+            }
+            "json_select" => {
+                let oxi = JsonSelect;
                 oxi.process(input, &config).await
             }
             _ => Err(crate::error::OxiError::UnknownOxi(self.name.clone())),

@@ -3,6 +3,7 @@ pub mod csv;
 pub mod file;
 pub mod flatten;
 pub mod format_json;
+pub mod json_select;
 pub mod parse_json;
 pub mod prelude;
 pub mod read_stdin;

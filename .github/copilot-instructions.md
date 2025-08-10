@@ -161,5 +161,6 @@ impl Oxi for MyOxi {
 - `src/types.rs` - Core data types, schema system (1193 lines)
 - `src/pipeline.rs` - Pipeline execution engine with retry/timeout logic
 - `src/oxis/prelude.rs` - Essential imports for any Oxi development
+- `docs/oxi_reference.md` - Complete reference for all available Oxis with configuration options
 - `tests/oxi_sdk_tests.rs` - Reference implementation patterns
 - `docs/current_plan.md` - Implementation roadmap and phase tracking
